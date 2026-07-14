@@ -1,0 +1,280 @@
+package shellapp
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"os/signal"
+	"slices"
+	"strconv"
+	"syscall"
+	"time"
+
+	"github.com/AvengeMedia/dankgo/log"
+)
+
+func getProcessExitCode(state *os.ProcessState) int {
+	if state == nil {
+		return 1
+	}
+	if code := state.ExitCode(); code != -1 {
+		return code
+	}
+	if status, ok := state.Sys().(syscall.WaitStatus); ok {
+		if status.Signaled() {
+			return 128 + int(status.Signal())
+		}
+	}
+	return 1
+}
+
+func (a *App) printBanner() {
+	fmt.Fprintf(os.Stderr, "%s %s\n", binaryName(), a.cfg.Version)
+}
+
+func (a *App) RunInteractive(session bool) error {
+	a.sessionManaged = session
+	a.printBanner()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	backend, err := a.cfg.Boot(ctx)
+	if err != nil {
+		return fmt.Errorf("starting backend: %w", err)
+	}
+	defer backend.Close()
+
+	if err := a.writeConfigState(); err != nil {
+		log.Warnf("failed to write config state: %v", err)
+	}
+	defer a.clearConfigState()
+
+	log.Infof("%s backend ready (ipc=%s)", binaryName(), backend.SocketPath())
+	log.Infof("starting UI (config=%s)", a.configPath)
+
+	cmd := a.buildUICommand(ctx, backend.SocketPath())
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return a.superviseShell(cmd, false)
+}
+
+func (a *App) RunDaemon(session bool) error {
+	a.sessionManaged = session
+	a.printBanner()
+
+	if !slices.Contains(os.Args, "--daemon-child") {
+		return a.spawnDaemonChild()
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	backend, err := a.cfg.Boot(ctx)
+	if err != nil {
+		return fmt.Errorf("starting backend: %w", err)
+	}
+	defer backend.Close()
+
+	if err := a.writeConfigState(); err != nil {
+		log.Warnf("failed to write config state: %v", err)
+	}
+	defer a.clearConfigState()
+
+	log.Infof("%s backend ready (ipc=%s)", binaryName(), backend.SocketPath())
+
+	cmd := a.buildUICommand(ctx, backend.SocketPath())
+
+	devNull, err := os.OpenFile("/dev/null", os.O_RDWR, 0)
+	if err != nil {
+		return fmt.Errorf("open /dev/null: %w", err)
+	}
+	defer devNull.Close()
+
+	cmd.Stdin = devNull
+	cmd.Stdout = devNull
+	cmd.Stderr = devNull
+
+	return a.superviseShell(cmd, true)
+}
+
+func (a *App) spawnDaemonChild() error {
+	args := []string{"run", "-d", "--daemon-child"}
+	if a.startHidden {
+		args = append(args, "--hidden")
+	}
+	if a.customConfig != "" {
+		args = append([]string{"-c", a.customConfig}, args...)
+	}
+
+	cmd := exec.Command(os.Args[0], args...)
+	cmd.Env = os.Environ()
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("starting daemon: %w", err)
+	}
+
+	log.Infof("%s daemon started (pid=%d)", binaryName(), cmd.Process.Pid)
+	return nil
+}
+
+func (a *App) superviseShell(cmd *exec.Cmd, silent bool) error {
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("starting UI: %w", err)
+	}
+
+	if err := a.writePIDFile(cmd.Process.Pid); err != nil {
+		log.Warnf("failed to write pid file: %v", err)
+	}
+	defer a.removePIDFile()
+
+	defer func() {
+		if cmd.Process != nil {
+			cmd.Process.Signal(syscall.SIGTERM)
+		}
+	}()
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGUSR1)
+
+	exitChan := make(chan error, 1)
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			exitChan <- fmt.Errorf("UI exited: %w", err)
+			return
+		}
+		exitChan <- fmt.Errorf("UI exited")
+	}()
+
+	for {
+		select {
+		case sig := <-sigChan:
+			if sig == syscall.SIGUSR1 {
+				if a.sessionManaged {
+					log.Infof("received SIGUSR1, exiting for systemd restart")
+					cmd.Process.Signal(syscall.SIGTERM)
+					os.Exit(1)
+				}
+				log.Infof("received SIGUSR1, spawning detached restart")
+				execDetachedRestart(os.Getpid())
+				return nil
+			}
+
+			select {
+			case <-exitChan:
+				os.Exit(getProcessExitCode(cmd.ProcessState))
+			case <-time.After(500 * time.Millisecond):
+			}
+
+			if !silent {
+				log.Infof("\nreceived %v, shutting down", sig)
+			}
+			cmd.Process.Signal(syscall.SIGTERM)
+			return nil
+
+		case err := <-exitChan:
+			if !silent && err != nil {
+				log.Error(err)
+			}
+			if cmd.Process != nil {
+				cmd.Process.Signal(syscall.SIGTERM)
+			}
+			os.Exit(getProcessExitCode(cmd.ProcessState))
+		}
+	}
+}
+
+func execDetachedRestart(targetPID int) {
+	selfPath, err := os.Executable()
+	if err != nil {
+		return
+	}
+
+	cmd := exec.Command(selfPath, "restart-detached", strconv.Itoa(targetPID))
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.Start()
+}
+
+func (a *App) RestartDetached(targetPIDStr string) {
+	targetPID, err := strconv.Atoi(targetPIDStr)
+	if err != nil {
+		return
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	if proc, err := os.FindProcess(targetPID); err == nil {
+		proc.Signal(syscall.SIGTERM)
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	a.Kill()
+	_ = a.RunDaemon(false)
+}
+
+func (a *App) Restart() {
+	pids := a.otherPIDs()
+	if len(pids) == 0 {
+		log.Infof("no running %s instances; starting daemon", binaryName())
+		_ = a.RunDaemon(false)
+		return
+	}
+
+	for pid := range pids {
+		proc, err := os.FindProcess(pid)
+		if err != nil {
+			log.Errorf("finding process %d: %v", pid, err)
+			continue
+		}
+		if proc.Signal(syscall.Signal(0)) != nil {
+			continue
+		}
+		if err := proc.Signal(syscall.SIGUSR1); err != nil {
+			log.Errorf("sending SIGUSR1 to %d: %v", pid, err)
+			continue
+		}
+		log.Infof("sent SIGUSR1 to %s pid=%d", binaryName(), pid)
+	}
+}
+
+func (a *App) Kill() {
+	pids := a.otherPIDs()
+	if len(pids) == 0 {
+		log.Infof("no running %s instances", binaryName())
+		return
+	}
+
+	for pid := range pids {
+		proc, err := os.FindProcess(pid)
+		if err != nil {
+			log.Errorf("finding process %d: %v", pid, err)
+			continue
+		}
+		if proc.Signal(syscall.Signal(0)) != nil {
+			continue
+		}
+		if err := proc.Kill(); err != nil {
+			log.Errorf("killing process %d: %v", pid, err)
+			continue
+		}
+		log.Infof("killed %s pid=%d", binaryName(), pid)
+	}
+
+	a.removeAllPIDFiles()
+}
+
+func (a *App) otherPIDs() map[int]bool {
+	currentPid := os.Getpid()
+	unique := make(map[int]bool)
+	for _, pid := range a.PIDs() {
+		if pid != currentPid {
+			unique[pid] = true
+		}
+	}
+	return unique
+}

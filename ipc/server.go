@@ -29,6 +29,7 @@ type Config struct {
 	MaxLineSize            int
 	DefaultSubscribeTopics []string
 	OnSubscribe            func(topics []string, sub *Subscriber)
+	Bus                    *EventBus
 }
 
 type Server struct {
@@ -47,11 +48,15 @@ func NewServer(cfg Config, handler Handler) *Server {
 	if cfg.MaxLineSize <= 0 {
 		cfg.MaxLineSize = defaultMaxLineSize
 	}
+	bus := cfg.Bus
+	if bus == nil {
+		bus = NewEventBus()
+	}
 	return &Server{
 		cfg:     cfg,
 		app:     paths.New(cfg.AppName),
 		handler: handler,
-		bus:     NewEventBus(),
+		bus:     bus,
 	}
 }
 
