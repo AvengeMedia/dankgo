@@ -31,6 +31,66 @@ func tempBase(t *testing.T) string {
 	return base
 }
 
+func keyedFS(key string) fstest.MapFS {
+	m := testFS()
+	m[RevFile] = &fstest.MapFile{Data: []byte(key + "\n")}
+	return m
+}
+
+func TestExtractKeyedUsesRevAsDirName(t *testing.T) {
+	base := tempBase(t)
+
+	dir, err := Extract(keyedFS("abcdef0123456789"), base)
+	if err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	if filepath.Base(dir) != "abcdef0123456789" {
+		t.Fatalf("dir %q, want rev-keyed name", dir)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "shell.qml")); err != nil {
+		t.Fatalf("shell.qml missing after extract: %v", err)
+	}
+
+	again, err := Extract(keyedFS("abcdef0123456789"), base)
+	if err != nil {
+		t.Fatalf("re-extract: %v", err)
+	}
+	if again != dir {
+		t.Fatalf("re-extract returned %q, want %q", again, dir)
+	}
+}
+
+func TestExtractKeyedNewRevExtractsFresh(t *testing.T) {
+	base := tempBase(t)
+
+	first, err := Extract(keyedFS("aaaaaaaaaaaaaaaa"), base)
+	if err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	second, err := Extract(keyedFS("bbbbbbbbbbbbbbbb"), base)
+	if err != nil {
+		t.Fatalf("extract new rev: %v", err)
+	}
+	if second == first {
+		t.Fatal("expected a new dir for a new revision")
+	}
+}
+
+func TestExtractInvalidRevFallsBackToHashing(t *testing.T) {
+	base := tempBase(t)
+
+	dir, err := Extract(keyedFS("../../escape"), base)
+	if err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	if filepath.Dir(dir) != base {
+		t.Fatalf("dir %q escaped base %q", dir, base)
+	}
+	if len(filepath.Base(dir)) != hashLen {
+		t.Fatalf("dir %q, want content-hash name", dir)
+	}
+}
+
 func TestExtractIsIdempotent(t *testing.T) {
 	base := tempBase(t)
 

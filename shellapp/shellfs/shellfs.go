@@ -1,7 +1,7 @@
 // Package shellfs materializes an embedded UI tree onto the filesystem,
 // since quickshell needs real paths. Trees are extracted read-only, keyed
-// by content hash, and verified on every resolution so local edits never
-// stick.
+// by a build-time revision file (.dankrev) when the tree carries one, else
+// by content hash computed and verified on every resolution.
 package shellfs
 
 import (
@@ -12,11 +12,22 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
-const hashLen = 16
+const (
+	hashLen = 16
+	// RevFile names a build-time revision key inside the UI tree (8-64 hex
+	// chars). It spares every resolution a full content hash: the extracted
+	// dir is trusted when its RevFile matches the embedded one.
+	RevFile = ".dankrev"
+)
 
 func Extract(fsys fs.FS, baseDir string) (string, error) {
+	if key, ok := embeddedRev(fsys); ok {
+		return extractKeyed(fsys, baseDir, key)
+	}
+
 	hash, err := hashFS(fsys)
 	if err != nil {
 		return "", fmt.Errorf("hash embedded UI: %w", err)
@@ -26,6 +37,18 @@ func Extract(fsys fs.FS, baseDir string) (string, error) {
 	if verify(target, hash) {
 		return target, nil
 	}
+	return materialize(fsys, baseDir, target, func() bool { return verify(target, hash) })
+}
+
+func extractKeyed(fsys fs.FS, baseDir, key string) (string, error) {
+	target := filepath.Join(baseDir, key)
+	if extractedRev(target) == key {
+		return target, nil
+	}
+	return materialize(fsys, baseDir, target, func() bool { return extractedRev(target) == key })
+}
+
+func materialize(fsys fs.FS, baseDir, target string, extractedByOther func() bool) (string, error) {
 	forceRemoveAll(target)
 
 	if err := os.MkdirAll(baseDir, 0o700); err != nil {
@@ -47,7 +70,7 @@ func Extract(fsys fs.FS, baseDir string) (string, error) {
 
 	if err := os.Rename(tmp, target); err != nil {
 		// A concurrent invocation may have extracted the same revision first.
-		if verify(target, hash) {
+		if extractedByOther() {
 			return target, nil
 		}
 		return "", err
@@ -69,6 +92,34 @@ func Prune(baseDir, keep string) {
 		}
 		forceRemoveAll(p)
 	}
+}
+
+func embeddedRev(fsys fs.FS) (string, bool) {
+	data, err := fs.ReadFile(fsys, RevFile)
+	if err != nil {
+		return "", false
+	}
+	key := strings.TrimSpace(string(data))
+	if len(key) < 8 || len(key) > 64 {
+		return "", false
+	}
+	for _, c := range key {
+		switch {
+		case c >= '0' && c <= '9':
+		case c >= 'a' && c <= 'f':
+		default:
+			return "", false
+		}
+	}
+	return key, true
+}
+
+func extractedRev(dir string) string {
+	data, err := os.ReadFile(filepath.Join(dir, RevFile))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }
 
 func verify(dir, hash string) bool {
