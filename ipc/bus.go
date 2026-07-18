@@ -121,5 +121,5 @@ func (s *Subscriber) deliver(ev Event) {
 	}
 	s.mu.Unlock()
 
-	s.writer.WriteEvent(ev)
+	_ = s.writer.WriteEvent(ev)
 }

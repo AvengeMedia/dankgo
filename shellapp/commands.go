@@ -30,8 +30,8 @@ func (a *App) runCommand() *cobra.Command {
 			a.startHidden, _ = cmd.Flags().GetBool("hidden")
 			isDaemonChild, _ := cmd.Flags().GetBool("daemon-child")
 
-			if !isDaemonChild && len(a.PIDs()) > 0 {
-				if err := a.CallUI("ui.show", nil); err == nil {
+			if !isDaemonChild && a.cfg.ShowMethod != "" && len(a.PIDs()) > 0 {
+				if err := a.CallUI(a.cfg.ShowMethod, nil); err == nil {
 					log.Infof("%s already running; showing window", binaryName())
 					return nil
 				}

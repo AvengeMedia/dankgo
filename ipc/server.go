@@ -26,9 +26,11 @@ type Config struct {
 	AppName                string
 	APIVersion             int
 	Capabilities           []string
+	CapabilitiesFunc       func() []string // computed per connection; overrides Capabilities when set
 	MaxLineSize            int
 	DefaultSubscribeTopics []string
 	OnSubscribe            func(topics []string, sub *Subscriber)
+	SubscribeHandler       Handler // replaces the built-in subscribe/unsubscribe handling when set
 	Bus                    *EventBus
 }
 
@@ -142,6 +144,9 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 		APIVersion:   s.cfg.APIVersion,
 		Capabilities: s.cfg.Capabilities,
 	}
+	if s.cfg.CapabilitiesFunc != nil {
+		caps.Capabilities = s.cfg.CapabilitiesFunc()
+	}
 	encoder := json.NewEncoder(conn)
 	if err := encoder.Encode(caps); err != nil {
 		return
@@ -160,7 +165,7 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 		var req Request
 		line := scanner.Bytes()
 		if err := json.Unmarshal(line, &req); err != nil {
-			writer.WriteResponse(Response[any]{ID: 0, Error: "invalid json: " + err.Error()})
+			_ = writer.WriteResponse(Response[any]{ID: 0, Error: "invalid json: " + err.Error()})
 			continue
 		}
 		go s.dispatch(connCtx, writer, req, subscriber)
@@ -172,8 +177,16 @@ func (s *Server) dispatch(ctx context.Context, w *ConnWriter, req Request, sub *
 	case "ping":
 		Respond(w, req.ID, map[string]any{"pong": true})
 	case "subscribe":
+		if s.cfg.SubscribeHandler != nil {
+			s.cfg.SubscribeHandler(ctx, w, req, sub)
+			return
+		}
 		s.handleSubscribe(w, req, sub)
 	case "unsubscribe":
+		if s.cfg.SubscribeHandler != nil {
+			s.cfg.SubscribeHandler(ctx, w, req, sub)
+			return
+		}
 		handleUnsubscribe(w, req, sub)
 	default:
 		if s.handler == nil {

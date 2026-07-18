@@ -121,6 +121,28 @@ func TestSubscribeAndPublish(t *testing.T) {
 	assert.Equal(t, map[string]any{"n": float64(1)}, ev["data"])
 }
 
+func TestSubscribeHandlerOverride(t *testing.T) {
+	srv := startServer(t, ipc.Config{
+		AppName:    "danktest",
+		APIVersion: 1,
+		SubscribeHandler: func(ctx context.Context, w *ipc.ConnWriter, req ipc.Request, sub *ipc.Subscriber) {
+			ipc.Respond(w, req.ID, map[string]any{"method": req.Method, "custom": true})
+		},
+	}, nil)
+
+	client, err := ipc.Dial(srv.SocketPath())
+	require.NoError(t, err)
+	defer client.Close()
+
+	resp, err := client.Call(ipc.Request{ID: 1, Method: "subscribe", Params: map[string]any{"services": []any{"network"}}})
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{"method": "subscribe", "custom": true}, *resp.Result)
+
+	resp, err = client.Call(ipc.Request{ID: 2, Method: "unsubscribe"})
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{"method": "unsubscribe", "custom": true}, *resp.Result)
+}
+
 func TestFindRunningSocket(t *testing.T) {
 	srv := startServer(t, ipc.Config{AppName: "danktest", APIVersion: 1}, nil)
 

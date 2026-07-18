@@ -12,8 +12,12 @@ Every app in the suite was carrying its own copy of the same logger, unix-socket
 | `paths` | XDG dirs + per-process socket paths, keyed by app name. `paths.New("dankcal").SocketPath()` |
 | `errdefs` | `CustomError`/`ErrorType` with HTTP status mapping. Apps register their own types from `AppErrorBase` up. stdlib-only. |
 | `errdefs/humaerr` | huma error envelope + `HumaErrorFunc`. Split out so non-HTTP apps never pull huma. |
-| `ipc` | JSON-over-unix-socket RPC: server (ping/subscribe/unsubscribe built in), client, event bus, mux. Stale sockets get reaped by PID. |
+| `ipc` | JSON-over-unix-socket RPC: server (ping/subscribe/unsubscribe built in), client, event bus, mux. Stale sockets get reaped by PID. Apps with their own subscribe protocol set `SubscribeHandler`; per-connection handshake capabilities via `CapabilitiesFunc`. |
 | `ipc/params` | Typed extraction from `map[string]any` request params. |
+| `shellapp` | Quickshell app lifecycle: run/restart/kill commands, daemon supervision, PID/session tracking, config-dir resolution (`-c` → `<PREFIX>_SHELL_DIR` → live instance → embedded UI). App-specific behavior hooks in via `PreLaunch`, `ExtraEnv`, `OnUIExit`, and an optional `Done()` channel on the backend. |
+| `shellapp/shellfs` | Materializes an embedded UI tree onto disk — content-hashed, read-only, pruned when stale. |
+| `syncmap` | Generic `sync.Map` (typed keys and values). |
+| `dbusutil` | godbus variant helpers: typed `Get`/`As`, recursive `Normalize`. |
 | `httpapi` | huma/chi scaffold: `NewHumaConfig`, `/docs` page, router with health + recoverer, graceful `Server`. Use à la carte or via `NewRouter`. |
 | `httpapi/middleware` | The chi-ported logger/recoverer/request-id set. |
 | `netutil` | `GetIPAddress` header dance. |

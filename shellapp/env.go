@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/AvengeMedia/dankgo/log"
 )
@@ -53,8 +54,24 @@ func (a *App) buildUICommand(ctx context.Context, socketPath string) *exec.Cmd {
 		env = append(env, a.cfg.EnvPrefix+"_DEFAULT_LAUNCH_PREFIX=systemd-run --user --scope")
 	}
 
+	env = a.appendHotReloadEnv(env)
 	env = appendQtEnv(env)
 	env = a.appendLogEnv(env)
+	if a.cfg.ExtraEnv != nil {
+		env = append(env, a.cfg.ExtraEnv(a.configPath)...)
+	}
 	cmd.Env = env
 	return cmd
+}
+
+func (a *App) appendHotReloadEnv(env []string) []string {
+	key := a.cfg.EnvPrefix + "_DISABLE_HOT_RELOAD"
+	if os.Getenv(key) != "" {
+		return env
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || strings.HasPrefix(a.configPath, home) {
+		return env
+	}
+	return append(env, key+"=1")
 }

@@ -3,16 +3,45 @@ package shellapp
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
 	"slices"
 	"strconv"
+	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/AvengeMedia/dankgo/log"
 )
+
+const stderrTailLimit = 8192
+
+type stderrTail struct {
+	mu     sync.Mutex
+	buf    strings.Builder
+	parent io.Writer
+}
+
+func (t *stderrTail) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.buf.Len() < stderrTailLimit {
+		t.buf.Write(p)
+	}
+	if t.parent == nil {
+		return len(p), nil
+	}
+	return t.parent.Write(p)
+}
+
+func (t *stderrTail) String() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.buf.String()
+}
 
 func getProcessExitCode(state *os.ProcessState) int {
 	if state == nil {
@@ -54,12 +83,17 @@ func (a *App) RunInteractive(session bool) error {
 	log.Infof("%s backend ready (ipc=%s)", binaryName(), backend.SocketPath())
 	log.Infof("starting UI (config=%s)", a.configPath)
 
+	if a.cfg.PreLaunch != nil {
+		a.cfg.PreLaunch()
+	}
+
 	cmd := a.buildUICommand(ctx, backend.SocketPath())
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	tail := &stderrTail{parent: os.Stderr}
+	cmd.Stderr = tail
 
-	return a.superviseShell(cmd, false)
+	return a.superviseShell(cmd, false, backend, tail)
 }
 
 func (a *App) RunDaemon(session bool) error {
@@ -86,6 +120,10 @@ func (a *App) RunDaemon(session bool) error {
 
 	log.Infof("%s backend ready (ipc=%s)", binaryName(), backend.SocketPath())
 
+	if a.cfg.PreLaunch != nil {
+		a.cfg.PreLaunch()
+	}
+
 	cmd := a.buildUICommand(ctx, backend.SocketPath())
 
 	devNull, err := os.OpenFile("/dev/null", os.O_RDWR, 0)
@@ -96,9 +134,10 @@ func (a *App) RunDaemon(session bool) error {
 
 	cmd.Stdin = devNull
 	cmd.Stdout = devNull
-	cmd.Stderr = devNull
+	tail := &stderrTail{parent: devNull}
+	cmd.Stderr = tail
 
-	return a.superviseShell(cmd, true)
+	return a.superviseShell(cmd, true, backend, tail)
 }
 
 func (a *App) spawnDaemonChild() error {
@@ -122,7 +161,8 @@ func (a *App) spawnDaemonChild() error {
 	return nil
 }
 
-func (a *App) superviseShell(cmd *exec.Cmd, silent bool) error {
+func (a *App) superviseShell(cmd *exec.Cmd, silent bool, backend Backend, tail *stderrTail) error {
+	startTime := time.Now()
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("starting UI: %w", err)
 	}
@@ -140,6 +180,19 @@ func (a *App) superviseShell(cmd *exec.Cmd, silent bool) error {
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGUSR1)
+
+	var backendDone <-chan error
+	if d, ok := backend.(interface{ Done() <-chan error }); ok {
+		backendDone = d.Done()
+	}
+
+	exitUI := func() {
+		exitCode := getProcessExitCode(cmd.ProcessState)
+		if a.cfg.OnUIExit != nil {
+			a.cfg.OnUIExit(exitCode, time.Since(startTime), tail.String())
+		}
+		os.Exit(exitCode)
+	}
 
 	exitChan := make(chan error, 1)
 	go func() {
@@ -166,7 +219,7 @@ func (a *App) superviseShell(cmd *exec.Cmd, silent bool) error {
 
 			select {
 			case <-exitChan:
-				os.Exit(getProcessExitCode(cmd.ProcessState))
+				exitUI()
 			case <-time.After(500 * time.Millisecond):
 			}
 
@@ -176,6 +229,13 @@ func (a *App) superviseShell(cmd *exec.Cmd, silent bool) error {
 			cmd.Process.Signal(syscall.SIGTERM)
 			return nil
 
+		case err := <-backendDone:
+			if err != nil {
+				log.Errorf("backend exited: %v", err)
+			}
+			cmd.Process.Signal(syscall.SIGTERM)
+			os.Exit(1)
+
 		case err := <-exitChan:
 			if !silent && err != nil {
 				log.Error(err)
@@ -183,7 +243,7 @@ func (a *App) superviseShell(cmd *exec.Cmd, silent bool) error {
 			if cmd.Process != nil {
 				cmd.Process.Signal(syscall.SIGTERM)
 			}
-			os.Exit(getProcessExitCode(cmd.ProcessState))
+			exitUI()
 		}
 	}
 }

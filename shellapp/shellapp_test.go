@@ -182,3 +182,93 @@ func TestCallUIFailsWithoutInstance(t *testing.T) {
 	a := testApp(t)
 	assert.Error(t, a.CallUI("ui.show", nil))
 }
+
+func TestSessionFileLifecycle(t *testing.T) {
+	a := testApp(t)
+	t.Setenv("WAYLAND_DISPLAY", "wayland-7")
+
+	require.NoError(t, a.writePIDFile(os.Getpid()))
+	data, err := os.ReadFile(a.sessionFilePath())
+	require.NoError(t, err)
+	assert.Equal(t, "wayland-7", string(data))
+
+	a.removePIDFile()
+	_, err = os.Stat(a.sessionFilePath())
+	assert.True(t, os.IsNotExist(err))
+	_, err = os.Stat(a.pidFilePath())
+	assert.True(t, os.IsNotExist(err))
+}
+
+func TestSessionPIDPrefersMatchingDisplay(t *testing.T) {
+	a := testApp(t)
+	t.Setenv("WAYLAND_DISPLAY", "wayland-7")
+	require.NoError(t, a.writePIDFile(os.Getpid()))
+
+	otherPID := filepath.Join(a.runtimeDir(), fmt.Sprintf("danktest-%d.pid", 999999))
+	require.NoError(t, os.WriteFile(otherPID, []byte(strconv.Itoa(os.Getppid())), 0o644))
+	otherSession := filepath.Join(a.runtimeDir(), fmt.Sprintf("danktest-%d.session", 999999))
+	require.NoError(t, os.WriteFile(otherSession, []byte("wayland-0"), 0o644))
+
+	pid, ok := a.SessionPID()
+	require.True(t, ok)
+	assert.Equal(t, os.Getpid(), pid)
+}
+
+func TestSessionPIDFallsBackToFirstLiveInstance(t *testing.T) {
+	a := testApp(t)
+	t.Setenv("WAYLAND_DISPLAY", "wayland-7")
+
+	file := filepath.Join(a.runtimeDir(), fmt.Sprintf("danktest-%d.pid", os.Getppid()))
+	require.NoError(t, os.WriteFile(file, []byte(strconv.Itoa(os.Getpid())), 0o644))
+
+	pid, ok := a.SessionPID()
+	require.True(t, ok)
+	assert.Equal(t, os.Getpid(), pid)
+}
+
+func TestSessionSocketPath(t *testing.T) {
+	a := testApp(t)
+	t.Setenv("WAYLAND_DISPLAY", "wayland-7")
+	require.NoError(t, a.writePIDFile(os.Getpid()))
+
+	_, ok := a.SessionSocketPath()
+	assert.False(t, ok)
+
+	socket := filepath.Join(a.runtimeDir(), fmt.Sprintf("danktest-%d.sock", os.Getpid()))
+	require.NoError(t, os.WriteFile(socket, nil, 0o600))
+
+	path, ok := a.SessionSocketPath()
+	require.True(t, ok)
+	assert.Equal(t, socket, path)
+}
+
+func TestHotReloadDisabledOutsideHome(t *testing.T) {
+	a := testApp(t)
+	a.configPath = filepath.Join(t.TempDir(), "shell")
+
+	cmd := a.buildUICommand(context.Background(), "/run/danktest-1.sock")
+	assert.Contains(t, strings.Join(cmd.Env, "\n"), "DANKTEST_DISABLE_HOT_RELOAD=1")
+
+	home, err := os.UserHomeDir()
+	require.NoError(t, err)
+	a.configPath = filepath.Join(home, "shell")
+	cmd = a.buildUICommand(context.Background(), "/run/danktest-1.sock")
+	assert.NotContains(t, strings.Join(cmd.Env, "\n"), "DANKTEST_DISABLE_HOT_RELOAD")
+
+	t.Setenv("DANKTEST_DISABLE_HOT_RELOAD", "0")
+	a.configPath = filepath.Join(t.TempDir(), "shell")
+	cmd = a.buildUICommand(context.Background(), "/run/danktest-1.sock")
+	assert.NotContains(t, strings.Join(cmd.Env, "\n"), "DANKTEST_DISABLE_HOT_RELOAD=1")
+}
+
+func TestExtraEnvAppended(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	a := New(Config{ID: "danktest", ExtraEnv: func(configPath string) []string {
+		return []string{"DANKTEST_EXECUTABLE=/usr/bin/danktest", "CONFIG=" + configPath}
+	}})
+	a.configPath = "/some/shell"
+
+	env := strings.Join(a.buildUICommand(context.Background(), "/run/danktest-1.sock").Env, "\n")
+	assert.Contains(t, env, "DANKTEST_EXECUTABLE=/usr/bin/danktest")
+	assert.Contains(t, env, "CONFIG=/some/shell")
+}

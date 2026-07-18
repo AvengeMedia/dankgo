@@ -23,9 +23,9 @@ type Response[T any] struct {
 
 func RespondError(w *ConnWriter, id int, msg string) {
 	log.Errorf("ipc error: id=%d method-error=%s", id, msg)
-	w.WriteResponse(Response[any]{ID: id, Error: msg})
+	_ = w.WriteResponse(Response[any]{ID: id, Error: msg})
 }
 
 func Respond[T any](w *ConnWriter, id int, result T) {
-	w.WriteResponse(Response[T]{ID: id, Result: &result})
+	_ = w.WriteResponse(Response[T]{ID: id, Result: &result})
 }

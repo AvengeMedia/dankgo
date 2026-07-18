@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/AvengeMedia/dankgo/paths"
 	"github.com/spf13/cobra"
@@ -26,12 +27,16 @@ type Embedded interface {
 }
 
 type Config struct {
-	ID        string // xdg/socket/pidfile identity, e.g. "dankcal"
-	EnvPrefix string // default: upper(ID); drives <P>_SOCKET, <P>_SHELL_DIR, <P>_LOG_*
-	QSAppID   string // e.g. "com.danklinux.dankcalendar"
-	Version   string
-	Embedded  Embedded
-	Boot      func(ctx context.Context) (Backend, error)
+	ID         string // xdg/socket/pidfile identity, e.g. "dankcal"
+	EnvPrefix  string // default: upper(ID); drives <P>_SOCKET, <P>_SHELL_DIR, <P>_LOG_*
+	QSAppID    string // e.g. "com.danklinux.dankcalendar"
+	Version    string
+	Embedded   Embedded
+	Boot       func(ctx context.Context) (Backend, error)
+	PreLaunch  func()
+	ExtraEnv   func(configPath string) []string
+	OnUIExit   func(exitCode int, uptime time.Duration, stderrTail string)
+	ShowMethod string // IPC method `run` calls on a live instance instead of relaunching; empty relaunches
 }
 
 type App struct {

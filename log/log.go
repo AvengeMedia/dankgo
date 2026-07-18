@@ -90,6 +90,8 @@ func GetQtLoggingRules() string {
 		level = "info"
 	}
 
+	// scene carries QML engine warnings (e.g. QQuickImage "Cannot open" cache
+	// probes); suppressed except at debug level
 	var rules []string
 	switch strings.ToLower(level) {
 	case "fatal":
@@ -97,13 +99,13 @@ func GetQtLoggingRules() string {
 	case "error":
 		rules = []string{"*.debug=false", "*.info=false", "*.warning=false"}
 	case "warn", "warning":
-		rules = []string{"*.debug=false", "*.info=false"}
+		rules = []string{"*.debug=false", "*.info=false", "scene.warning=false"}
 	case "info":
-		rules = []string{"*.debug=false"}
+		rules = []string{"*.debug=false", "scene.warning=false"}
 	case "debug":
 		return ""
 	default:
-		rules = []string{"*.debug=false"}
+		rules = []string{"*.debug=false", "scene.warning=false"}
 	}
 
 	return strings.Join(rules, ";")

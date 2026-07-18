@@ -7,6 +7,7 @@ require (
 	github.com/charmbracelet/log v1.0.0
 	github.com/danielgtaylor/huma/v2 v2.38.0
 	github.com/go-chi/chi/v5 v5.2.5
+	github.com/godbus/dbus/v5 v5.2.2
 	github.com/gorilla/schema v1.4.1
 	github.com/mattn/go-isatty v0.0.22
 	github.com/muesli/termenv v0.16.0
