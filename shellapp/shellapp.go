@@ -75,15 +75,17 @@ func binaryName() string { return filepath.Base(os.Args[0]) }
 // filesystem search.
 func (a *App) ResolveConfig(_ *cobra.Command, _ []string) error {
 	if a.customConfig != "" {
-		if err := validateShellDir(a.customConfig); err != nil {
+		dir, err := resolveShellDir(a.customConfig)
+		if err != nil {
 			return fmt.Errorf("custom config path: %w", err)
 		}
-		a.configPath = a.customConfig
+		a.configPath = dir
 		return nil
 	}
 
-	if dir := os.Getenv(a.shellDirEnv()); dir != "" {
-		if err := validateShellDir(dir); err != nil {
+	if raw := os.Getenv(a.shellDirEnv()); raw != "" {
+		dir, err := resolveShellDir(raw)
+		if err != nil {
 			return fmt.Errorf("%s: %w", a.shellDirEnv(), err)
 		}
 		a.configPath = dir
@@ -105,6 +107,21 @@ func (a *App) ResolveConfig(_ *cobra.Command, _ []string) error {
 	}
 
 	return a.useEmbeddedShell()
+}
+
+// resolveShellDir normalizes a user-supplied dir to an absolute path before
+// validating it, so downstream heuristics keyed on the path (e.g. the
+// $HOME-prefix hot-reload check) see a stable form regardless of whether the
+// caller passed it relative to the cwd.
+func resolveShellDir(dir string) (string, error) {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", err
+	}
+	if err := validateShellDir(abs); err != nil {
+		return "", err
+	}
+	return abs, nil
 }
 
 func validateShellDir(dir string) error {
