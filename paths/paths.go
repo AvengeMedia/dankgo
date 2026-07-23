@@ -28,7 +28,14 @@ func (a App) StateDir() (string, error) {
 }
 
 func (a App) SocketDir() string {
-	if runtime := os.Getenv("XDG_RUNTIME_DIR"); runtime != "" {
+	runtime := os.Getenv("XDG_RUNTIME_DIR")
+	// The per-app runtime dir is bind-mounted into the Flatpak sandbox at the
+	// same path it has on the host, so sockets placed there are reachable from
+	// both sides.
+	if id := os.Getenv("FLATPAK_ID"); id != "" && runtime != "" {
+		return filepath.Join(runtime, "app", id)
+	}
+	if runtime != "" {
 		return runtime
 	}
 	if os.Getuid() == 0 {

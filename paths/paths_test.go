@@ -63,8 +63,15 @@ func TestDataDirIsPrivate(t *testing.T) {
 func TestSocketDir(t *testing.T) {
 	runtime := t.TempDir()
 	t.Setenv("XDG_RUNTIME_DIR", runtime)
+	t.Setenv("FLATPAK_ID", "")
+	os.Unsetenv("FLATPAK_ID")
 	app := paths.New("dankapp")
 	assert.Equal(t, runtime, app.SocketDir())
+
+	t.Setenv("FLATPAK_ID", "com.danklinux.dankapp")
+	assert.Equal(t, filepath.Join(runtime, "app", "com.danklinux.dankapp"), app.SocketDir())
+	t.Setenv("FLATPAK_ID", "")
+	os.Unsetenv("FLATPAK_ID")
 
 	t.Setenv("XDG_RUNTIME_DIR", "")
 	os.Unsetenv("XDG_RUNTIME_DIR")
