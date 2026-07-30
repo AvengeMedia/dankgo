@@ -37,6 +37,13 @@ func (a *App) runCommand() *cobra.Command {
 				}
 			}
 
+			if !isDaemonChild {
+				if pid, ok := a.sessionUIPID(); ok {
+					log.Infof("%s already running for this session (pid=%d); refusing to start a second instance", binaryName(), pid)
+					return nil
+				}
+			}
+
 			if err := a.applyLogFlags(cmd); err != nil {
 				return err
 			}

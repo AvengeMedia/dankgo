@@ -173,26 +173,35 @@ func (a *App) firstChildPID() (int, bool) {
 	return 0, false
 }
 
-// SessionPID returns the UI child PID for the current WAYLAND_DISPLAY
-// session, falling back to the first live instance.
-func (a *App) SessionPID() (int, bool) {
+// sessionUIPID returns the UI child PID for the current WAYLAND_DISPLAY
+// session only, with no cross-session fallback.
+func (a *App) sessionUIPID() (int, bool) {
 	parentPID, ok := a.sessionParentPID(os.Getenv("WAYLAND_DISPLAY"))
 	if !ok {
-		return a.firstChildPID()
+		return 0, false
 	}
 
 	pidFile := filepath.Join(a.runtimeDir(), fmt.Sprintf("%s%d%s", a.pidFilePrefix(), parentPID, pidFileExtension))
 	data, err := os.ReadFile(pidFile)
 	if err != nil {
-		return a.firstChildPID()
+		return 0, false
 	}
 
 	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
 	if err != nil || !processAlive(pid) {
-		return a.firstChildPID()
+		return 0, false
 	}
 
 	return pid, true
+}
+
+// SessionPID returns the UI child PID for the current WAYLAND_DISPLAY
+// session, falling back to the first live instance.
+func (a *App) SessionPID() (int, bool) {
+	if pid, ok := a.sessionUIPID(); ok {
+		return pid, true
+	}
+	return a.firstChildPID()
 }
 
 // SessionSocketPath returns the backend socket of the instance supervising

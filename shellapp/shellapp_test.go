@@ -214,6 +214,33 @@ func TestSessionPIDPrefersMatchingDisplay(t *testing.T) {
 	assert.Equal(t, os.Getpid(), pid)
 }
 
+func TestSessionUIPIDMatchesOnlyCurrentDisplay(t *testing.T) {
+	a := testApp(t)
+	t.Setenv("WAYLAND_DISPLAY", "wayland-7")
+	require.NoError(t, a.writePIDFile(os.Getpid()))
+
+	pid, ok := a.sessionUIPID()
+	require.True(t, ok)
+	assert.Equal(t, os.Getpid(), pid)
+
+	t.Setenv("WAYLAND_DISPLAY", "wayland-0")
+	_, ok = a.sessionUIPID()
+	assert.False(t, ok)
+}
+
+func TestSessionUIPIDIgnoresDeadInstance(t *testing.T) {
+	a := testApp(t)
+	t.Setenv("WAYLAND_DISPLAY", "wayland-7")
+
+	session := filepath.Join(a.runtimeDir(), fmt.Sprintf("danktest-%d.session", 999999))
+	require.NoError(t, os.WriteFile(session, []byte("wayland-7"), 0o644))
+	pidFile := filepath.Join(a.runtimeDir(), fmt.Sprintf("danktest-%d.pid", 999999))
+	require.NoError(t, os.WriteFile(pidFile, []byte("999999"), 0o644))
+
+	_, ok := a.sessionUIPID()
+	assert.False(t, ok)
+}
+
 func TestSessionPIDFallsBackToFirstLiveInstance(t *testing.T) {
 	a := testApp(t)
 	t.Setenv("WAYLAND_DISPLAY", "wayland-7")
