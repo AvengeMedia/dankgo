@@ -4,9 +4,14 @@ import (
 	"encoding/json"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/AvengeMedia/dankgo/log"
 )
+
+// A client that has not drained its socket for this long is dead; disconnect
+// it rather than let it block publishers.
+const writeTimeout = 30 * time.Second
 
 type ConnWriter struct {
 	mu   sync.Mutex
@@ -42,9 +47,13 @@ func (w *ConnWriter) WriteEvent(ev Event) error {
 func (w *ConnWriter) write(data []byte) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if _, err := w.conn.Write(data); err != nil {
-		log.Debugf("ipc write: %v", err)
-		return err
+	_ = w.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+	_, err := w.conn.Write(data)
+	_ = w.conn.SetWriteDeadline(time.Time{})
+	if err == nil {
+		return nil
 	}
-	return nil
+	log.Debugf("ipc write: %v", err)
+	w.conn.Close()
+	return err
 }
