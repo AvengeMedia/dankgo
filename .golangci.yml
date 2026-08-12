@@ -91,6 +91,11 @@ linters:
       - path: httpapi/middleware/
         linters:
           - errcheck
+      # Generated wayland protocol code patterns
+      - path: wayland/
+        linters:
+          - errcheck
+          - ineffassign
       # Exclude cleanup/teardown method calls from errcheck
       - linters:
           - errcheck
