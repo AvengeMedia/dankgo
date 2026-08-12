@@ -1,4 +1,4 @@
-//go:build linux
+//go:build unix
 
 // Package wlclipboard reads, watches, and owns the Wayland clipboard through
 // the ext_data_control_v1 protocol without external binaries.
