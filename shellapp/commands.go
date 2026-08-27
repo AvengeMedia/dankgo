@@ -84,8 +84,8 @@ func (a *App) restartCommand() *cobra.Command {
 		Use:     "restart",
 		Short:   "Restart the running " + binaryName() + " instance",
 		PreRunE: a.ResolveConfig,
-		Run: func(_ *cobra.Command, _ []string) {
-			a.Restart()
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return a.restart()
 		},
 	}
 }

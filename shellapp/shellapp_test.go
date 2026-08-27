@@ -2,11 +2,13 @@ package shellapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/AvengeMedia/dankgo/ipc"
@@ -33,6 +35,42 @@ func TestEnvPrefixDefaultsToUpperID(t *testing.T) {
 
 	a = New(Config{ID: "danktest", EnvPrefix: "CUSTOM"})
 	assert.Equal(t, "CUSTOM", a.cfg.EnvPrefix)
+}
+
+func TestSessionRestartExitCode(t *testing.T) {
+	assert.Equal(t, 1, New(Config{}).sessionRestartExitCode())
+	assert.Equal(t, 75, New(Config{SessionRestartExitCode: 75}).sessionRestartExitCode())
+}
+
+func TestExitMatchesSignal(t *testing.T) {
+	assert.True(t, exitMatchesSignal(syscall.SIGTERM, 143))
+	assert.True(t, exitMatchesSignal(syscall.SIGINT, 130))
+	assert.False(t, exitMatchesSignal(syscall.SIGTERM, 139))
+	assert.False(t, exitMatchesSignal(syscall.SIGTERM, 1))
+}
+
+func TestRestartUsesManagedRestartHook(t *testing.T) {
+	called := false
+	a := New(Config{
+		TryManagedRestart: func() (bool, error) {
+			called = true
+			return true, nil
+		},
+	})
+
+	require.NoError(t, a.restart())
+
+	assert.True(t, called)
+}
+
+func TestRestartReturnsManagedRestartError(t *testing.T) {
+	a := New(Config{
+		TryManagedRestart: func() (bool, error) {
+			return true, errors.New("manager unavailable")
+		},
+	})
+
+	assert.ErrorContains(t, a.restart(), "manager unavailable")
 }
 
 func TestPIDsReapsDeadEntries(t *testing.T) {

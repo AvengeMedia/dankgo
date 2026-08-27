@@ -58,6 +58,18 @@ func getProcessExitCode(state *os.ProcessState) int {
 	return 1
 }
 
+func (a *App) sessionRestartExitCode() int {
+	if a.cfg.SessionRestartExitCode > 0 && a.cfg.SessionRestartExitCode < 256 {
+		return a.cfg.SessionRestartExitCode
+	}
+	return 1
+}
+
+func exitMatchesSignal(sig os.Signal, exitCode int) bool {
+	s, ok := sig.(syscall.Signal)
+	return ok && exitCode == 128+int(s)
+}
+
 func (a *App) printBanner() {
 	fmt.Fprintf(os.Stderr, "%s %s\n", binaryName(), a.cfg.Version)
 }
@@ -210,7 +222,7 @@ func (a *App) superviseShell(cmd *exec.Cmd, silent bool, backend Backend, tail *
 				if a.sessionManaged {
 					log.Infof("received SIGUSR1, exiting for systemd restart")
 					cmd.Process.Signal(syscall.SIGTERM)
-					os.Exit(1)
+					os.Exit(a.sessionRestartExitCode())
 				}
 				log.Infof("received SIGUSR1, spawning detached restart")
 				execDetachedRestart(os.Getpid())
@@ -219,6 +231,9 @@ func (a *App) superviseShell(cmd *exec.Cmd, silent bool, backend Backend, tail *
 
 			select {
 			case <-exitChan:
+				if exitMatchesSignal(sig, getProcessExitCode(cmd.ProcessState)) {
+					return nil
+				}
 				exitUI()
 			case <-time.After(500 * time.Millisecond):
 			}
@@ -277,12 +292,22 @@ func (a *App) RestartDetached(targetPIDStr string) {
 	_ = a.RunDaemon(false)
 }
 
-func (a *App) Restart() {
+func (a *App) restart() error {
+	if a.cfg.TryManagedRestart != nil {
+		handled, err := a.cfg.TryManagedRestart()
+		if err != nil {
+			return fmt.Errorf("requesting managed restart: %w", err)
+		}
+		if handled {
+			log.Infof("requested managed restart for %s", binaryName())
+			return nil
+		}
+	}
+
 	pids := a.otherPIDs()
 	if len(pids) == 0 {
 		log.Infof("no running %s instances; starting daemon", binaryName())
-		_ = a.RunDaemon(false)
-		return
+		return a.RunDaemon(false)
 	}
 
 	for pid := range pids {
@@ -299,6 +324,13 @@ func (a *App) Restart() {
 			continue
 		}
 		log.Infof("sent SIGUSR1 to %s pid=%d", binaryName(), pid)
+	}
+	return nil
+}
+
+func (a *App) Restart() {
+	if err := a.restart(); err != nil {
+		log.Errorf("restarting %s: %v", binaryName(), err)
 	}
 }
 

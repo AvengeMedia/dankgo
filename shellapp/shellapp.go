@@ -37,6 +37,9 @@ type Config struct {
 	ExtraEnv   func(configPath string) []string
 	OnUIExit   func(exitCode int, uptime time.Duration, stderrTail string)
 	ShowMethod string // IPC method `run` calls on a live instance instead of relaunching; empty relaunches
+
+	SessionRestartExitCode int                              // exit code on SIGUSR1 managed restart (defaults to 1)
+	TryManagedRestart      func() (handled bool, err error) // optional hook to route restart via service manager
 }
 
 type App struct {
