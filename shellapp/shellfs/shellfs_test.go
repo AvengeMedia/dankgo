@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 	"testing/fstest"
+	"time"
 )
 
 func testFS() fstest.MapFS {
@@ -111,6 +112,35 @@ func TestExtractIsIdempotent(t *testing.T) {
 	}
 	if second != first {
 		t.Fatalf("re-extract returned %q, want %q", second, first)
+	}
+}
+
+func TestExtractStampsContentTimes(t *testing.T) {
+	first, err := Extract(keyedFS("aaaaaaaaaaaaaaaa"), tempBase(t))
+	if err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	second, err := Extract(keyedFS("bbbbbbbbbbbbbbbb"), tempBase(t))
+	if err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+
+	mtime := func(dir, name string) time.Time {
+		info, err := os.Stat(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatalf("stat %s: %v", name, err)
+		}
+		return info.ModTime()
+	}
+
+	if !mtime(first, "shell.qml").Equal(mtime(second, "shell.qml")) {
+		t.Fatal("same content extracted twice got different mtimes")
+	}
+	if mtime(first, "shell.qml").Equal(mtime(first, "Common/Theme.qml")) {
+		t.Fatal("different content got the same mtime")
+	}
+	if mtime(first, "shell.qml").UnixMilli() == 0 {
+		t.Fatal("mtime must be nonzero")
 	}
 }
 

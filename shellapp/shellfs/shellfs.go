@@ -6,6 +6,7 @@ package shellfs
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
@@ -21,6 +23,10 @@ const (
 	// chars). It spares every resolution a full content hash: the extracted
 	// dir is trusted when its RevFile matches the embedded one.
 	RevFile = ".dankrev"
+
+	// content mtimes span 2000..2030, a zero stamp would disable qt's cache check
+	contentTimeBase = 946684800
+	contentTimeSpan = 946684800
 )
 
 func Extract(fsys fs.FS, baseDir string) (string, error) {
@@ -62,6 +68,9 @@ func materialize(fsys fs.FS, baseDir, target string, extractedByOther func() boo
 	defer forceRemoveAll(tmp)
 
 	if err := os.CopyFS(tmp, fsys); err != nil {
+		return "", fmt.Errorf("extract embedded UI: %w", err)
+	}
+	if err := stampContentTimes(tmp); err != nil {
 		return "", fmt.Errorf("extract embedded UI: %w", err)
 	}
 	if err := makeReadOnly(tmp); err != nil {
@@ -153,6 +162,28 @@ func hashFS(fsys fs.FS) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil))[:hashLen], nil
+}
+
+// quickshell's qml disk cache trusts an entry when the source mtime matches, so
+// mtimes derive from content: the same bytes stay cached across reboots and
+// re-extractions, different bytes can never match a stale entry.
+func stampContentTimes(root string) error {
+	return filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		t := contentTime(data)
+		return os.Chtimes(p, t, t)
+	})
+}
+
+func contentTime(data []byte) time.Time {
+	sum := sha256.Sum256(data)
+	return time.Unix(contentTimeBase+int64(binary.BigEndian.Uint32(sum[:4])%contentTimeSpan), 0)
 }
 
 func makeReadOnly(root string) error {
