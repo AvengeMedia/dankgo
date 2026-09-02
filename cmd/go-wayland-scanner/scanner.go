@@ -333,36 +333,36 @@ func writeInterface(w io.Writer, v Interface) {
 func writeRequest(w io.Writer, ifaceName string, opcode int, r Request) {
 	requestName := toCamel(r.Name)
 
-	// Generate param & returns types
 	params := []string{}
+	proxyParams := []string{}
+	proxyNames := []string{}
+	proxyCtors := []string{}
 	returnTypes := []string{}
 	for _, arg := range r.Args {
 		argNameLower := toLowerCamel(arg.Name)
-		argIface := toCamel(arg.Interface)
-
-		if !isLocalInterface(arg.Interface) {
-			if protocol.Name != "wayland" && strings.HasPrefix(arg.Interface, "wl_") {
-				argIface = "client." + toCamelPrefix(arg.Interface, "wl_")
-			} else if protocol.Name != "xdg_shell" && strings.HasPrefix(arg.Interface, "xdg_") {
-				argIface = "xdg_shell." + toCamelPrefix(arg.Interface, "xdg_")
-			}
-		}
+		argIface := qualifiedInterface(arg.Interface)
 
 		switch arg.Type {
 		case "new_id":
-			if arg.Interface != "" {
-				returnTypes = append(returnTypes, "*"+argIface)
-			} else {
+			if arg.Interface == "" {
 				// Special for wl_registry.bind
 				params = append(params, "iface string", "version uint32", "id Proxy")
+				proxyParams = append(proxyParams, "iface string", "version uint32", "id Proxy")
+				continue
 			}
+			returnTypes = append(returnTypes, "*"+argIface)
+			proxyParams = append(proxyParams, argNameLower+" *"+argIface)
+			proxyNames = append(proxyNames, argNameLower)
+			proxyCtors = append(proxyCtors, qualifiedConstructor(arg.Interface))
 
 		case "object":
 			params = append(params, argNameLower+" *"+argIface)
+			proxyParams = append(proxyParams, argNameLower+" *"+argIface)
 
 		case "int", "uint", "fixed",
 			"string", "array", "fd":
 			params = append(params, argNameLower+" "+typeToGoTypeMap[arg.Type])
+			proxyParams = append(proxyParams, argNameLower+" "+typeToGoTypeMap[arg.Type])
 		}
 	}
 
@@ -383,25 +383,23 @@ func writeRequest(w io.Writer, ifaceName string, opcode int, r Request) {
 		fmt.Fprintf(w, "defer i.MarkZombie()\n")
 	}
 
-	// Create new objects, if any
-	newObjects := []string{}
-	for _, arg := range r.Args {
-		if arg.Type == "new_id" && arg.Interface != "" {
-			argNameLower := toLowerCamel(arg.Name)
-			argIface := toCamel(arg.Interface)
-
-			if isLocalInterface(arg.Interface) {
-				fmt.Fprintf(w, "%s := New%s(i.Context())\n", argNameLower, argIface)
-			} else {
-				if protocol.Name != "wayland" && strings.HasPrefix(arg.Interface, "wl_") {
-					fmt.Fprintf(w, "%s := client.New%s(i.Context())\n", argNameLower, toCamelPrefix(arg.Interface, "wl_"))
-				} else if protocol.Name != "xdg_shell" && strings.HasPrefix(arg.Interface, "xdg_") {
-					fmt.Fprintf(w, "%s := xdg_shell.New%s(i.Context())\n", argNameLower, toCamelPrefix(arg.Interface, "xdg_"))
-				}
-			}
-
-			newObjects = append(newObjects, argNameLower)
+	if len(proxyNames) > 0 {
+		for i, name := range proxyNames {
+			fmt.Fprintf(w, "%s := %s(i.Context())\n", name, proxyCtors[i])
 		}
+		callArgs := []string{}
+		for _, arg := range r.Args {
+			if arg.Type == "new_id" && arg.Interface != "" {
+				callArgs = append(callArgs, toLowerCamel(arg.Name))
+				continue
+			}
+			callArgs = append(callArgs, argCallNames(arg)...)
+		}
+		fmt.Fprintf(w, "return %s, i.%sWithProxy(%s)\n", strings.Join(proxyNames, ","), requestName, strings.Join(callArgs, ","))
+		fmt.Fprintf(w, "}\n")
+
+		fmt.Fprintf(w, "// %sWithProxy : %s, using pre-created proxies\n", requestName, new(doc.Package).Synopsis(r.Description.Summary))
+		fmt.Fprintf(w, "func (i *%s) %sWithProxy(%s) error {\n", ifaceName, requestName, strings.Join(proxyParams, ","))
 	}
 
 	// Create request
@@ -586,8 +584,41 @@ func writeRequest(w io.Writer, ifaceName string, opcode int, r Request) {
 		}
 	}
 
-	fmt.Fprintf(w, "return %s\n", strings.Join(append(newObjects, "err"), ","))
+	fmt.Fprintf(w, "return err\n")
 	fmt.Fprintf(w, "}\n")
+}
+
+func argCallNames(arg Arg) []string {
+	if arg.Type == "new_id" {
+		return []string{"iface", "version", "id"}
+	}
+	return []string{toLowerCamel(arg.Name)}
+}
+
+func qualifiedInterface(iface string) string {
+	if isLocalInterface(iface) {
+		return toCamel(iface)
+	}
+	if protocol.Name != "wayland" && strings.HasPrefix(iface, "wl_") {
+		return "client." + toCamelPrefix(iface, "wl_")
+	}
+	if protocol.Name != "xdg_shell" && strings.HasPrefix(iface, "xdg_") {
+		return "xdg_shell." + toCamelPrefix(iface, "xdg_")
+	}
+	return toCamel(iface)
+}
+
+func qualifiedConstructor(iface string) string {
+	if isLocalInterface(iface) {
+		return "New" + toCamel(iface)
+	}
+	if protocol.Name != "wayland" && strings.HasPrefix(iface, "wl_") {
+		return "client.New" + toCamelPrefix(iface, "wl_")
+	}
+	if protocol.Name != "xdg_shell" && strings.HasPrefix(iface, "xdg_") {
+		return "xdg_shell.New" + toCamelPrefix(iface, "xdg_")
+	}
+	return "New" + toCamel(iface)
 }
 
 func writeEnum(w io.Writer, ifaceName string, e Enum) {

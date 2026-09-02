@@ -73,6 +73,11 @@ func NewDisplay(ctx *Context) *Display {
 // The callback_data passed in the callback is undefined and should be ignored.
 func (i *Display) Sync() (*Callback, error) {
 	callback := NewCallback(i.Context())
+	return callback, i.SyncWithProxy(callback)
+}
+
+// SyncWithProxy : asynchronous roundtrip, using pre-created proxies
+func (i *Display) SyncWithProxy(callback *Callback) error {
 	const opcode = 0
 	const _reqBufLen = 8 + 4
 	var _reqBuf [_reqBufLen]byte
@@ -84,7 +89,7 @@ func (i *Display) Sync() (*Callback, error) {
 	PutUint32(_reqBuf[l:l+4], callback.ID())
 	l += 4
 	err := i.Context().WriteMsg(_reqBuf[:], nil)
-	return callback, err
+	return err
 }
 
 // GetRegistry : get global registry object
@@ -100,6 +105,11 @@ func (i *Display) Sync() (*Callback, error) {
 // possible to avoid wasting memory.
 func (i *Display) GetRegistry() (*Registry, error) {
 	registry := NewRegistry(i.Context())
+	return registry, i.GetRegistryWithProxy(registry)
+}
+
+// GetRegistryWithProxy : get global registry object, using pre-created proxies
+func (i *Display) GetRegistryWithProxy(registry *Registry) error {
 	const opcode = 1
 	const _reqBufLen = 8 + 4
 	var _reqBuf [_reqBufLen]byte
@@ -111,7 +121,7 @@ func (i *Display) GetRegistry() (*Registry, error) {
 	PutUint32(_reqBuf[l:l+4], registry.ID())
 	l += 4
 	err := i.Context().WriteMsg(_reqBuf[:], nil)
-	return registry, err
+	return err
 }
 
 func (i *Display) Destroy() error {
@@ -499,6 +509,11 @@ func NewCompositor(ctx *Context) *Compositor {
 // Ask the compositor to create a new surface.
 func (i *Compositor) CreateSurface() (*Surface, error) {
 	id := NewSurface(i.Context())
+	return id, i.CreateSurfaceWithProxy(id)
+}
+
+// CreateSurfaceWithProxy : create new surface, using pre-created proxies
+func (i *Compositor) CreateSurfaceWithProxy(id *Surface) error {
 	const opcode = 0
 	const _reqBufLen = 8 + 4
 	var _reqBuf [_reqBufLen]byte
@@ -510,7 +525,7 @@ func (i *Compositor) CreateSurface() (*Surface, error) {
 	PutUint32(_reqBuf[l:l+4], id.ID())
 	l += 4
 	err := i.Context().WriteMsg(_reqBuf[:], nil)
-	return id, err
+	return err
 }
 
 // CreateRegion : create new region
@@ -518,6 +533,11 @@ func (i *Compositor) CreateSurface() (*Surface, error) {
 // Ask the compositor to create a new region.
 func (i *Compositor) CreateRegion() (*Region, error) {
 	id := NewRegion(i.Context())
+	return id, i.CreateRegionWithProxy(id)
+}
+
+// CreateRegionWithProxy : create new region, using pre-created proxies
+func (i *Compositor) CreateRegionWithProxy(id *Region) error {
 	const opcode = 1
 	const _reqBufLen = 8 + 4
 	var _reqBuf [_reqBufLen]byte
@@ -529,7 +549,7 @@ func (i *Compositor) CreateRegion() (*Region, error) {
 	PutUint32(_reqBuf[l:l+4], id.ID())
 	l += 4
 	err := i.Context().WriteMsg(_reqBuf[:], nil)
-	return id, err
+	return err
 }
 
 func (i *Compositor) Destroy() error {
@@ -591,6 +611,11 @@ func NewShmPool(ctx *Context) *ShmPool {
 //	format: buffer pixel format
 func (i *ShmPool) CreateBuffer(offset, width, height, stride int32, format uint32) (*Buffer, error) {
 	id := NewBuffer(i.Context())
+	return id, i.CreateBufferWithProxy(id, offset, width, height, stride, format)
+}
+
+// CreateBufferWithProxy : create a buffer from the pool, using pre-created proxies
+func (i *ShmPool) CreateBufferWithProxy(id *Buffer, offset, width, height, stride int32, format uint32) error {
 	const opcode = 0
 	const _reqBufLen = 8 + 4 + 4 + 4 + 4 + 4 + 4
 	var _reqBuf [_reqBufLen]byte
@@ -612,7 +637,7 @@ func (i *ShmPool) CreateBuffer(offset, width, height, stride int32, format uint3
 	PutUint32(_reqBuf[l:l+4], uint32(format))
 	l += 4
 	err := i.Context().WriteMsg(_reqBuf[:], nil)
-	return id, err
+	return err
 }
 
 // Destroy : destroy the pool
@@ -715,6 +740,11 @@ func NewShm(ctx *Context) *Shm {
 //	size: pool size, in bytes
 func (i *Shm) CreatePool(fd int, size int32) (*ShmPool, error) {
 	id := NewShmPool(i.Context())
+	return id, i.CreatePoolWithProxy(id, fd, size)
+}
+
+// CreatePoolWithProxy : create a shm pool, using pre-created proxies
+func (i *Shm) CreatePoolWithProxy(id *ShmPool, fd int, size int32) error {
 	const opcode = 0
 	const _reqBufLen = 8 + 4 + 4
 	var _reqBuf [_reqBufLen]byte
@@ -729,7 +759,7 @@ func (i *Shm) CreatePool(fd int, size int32) (*ShmPool, error) {
 	l += 4
 	oob := unix.UnixRights(int(fd))
 	err := i.Context().WriteMsg(_reqBuf[:], oob)
-	return id, err
+	return err
 }
 
 // Release : release the shm object
@@ -2861,6 +2891,11 @@ func NewDataDeviceManager(ctx *Context) *DataDeviceManager {
 // Create a new data source.
 func (i *DataDeviceManager) CreateDataSource() (*DataSource, error) {
 	id := NewDataSource(i.Context())
+	return id, i.CreateDataSourceWithProxy(id)
+}
+
+// CreateDataSourceWithProxy : create a new data source, using pre-created proxies
+func (i *DataDeviceManager) CreateDataSourceWithProxy(id *DataSource) error {
 	const opcode = 0
 	const _reqBufLen = 8 + 4
 	var _reqBuf [_reqBufLen]byte
@@ -2872,7 +2907,7 @@ func (i *DataDeviceManager) CreateDataSource() (*DataSource, error) {
 	PutUint32(_reqBuf[l:l+4], id.ID())
 	l += 4
 	err := i.Context().WriteMsg(_reqBuf[:], nil)
-	return id, err
+	return err
 }
 
 // GetDataDevice : create a new data device
@@ -2882,6 +2917,11 @@ func (i *DataDeviceManager) CreateDataSource() (*DataSource, error) {
 //	seat: seat associated with the data device
 func (i *DataDeviceManager) GetDataDevice(seat *Seat) (*DataDevice, error) {
 	id := NewDataDevice(i.Context())
+	return id, i.GetDataDeviceWithProxy(id, seat)
+}
+
+// GetDataDeviceWithProxy : create a new data device, using pre-created proxies
+func (i *DataDeviceManager) GetDataDeviceWithProxy(id *DataDevice, seat *Seat) error {
 	const opcode = 1
 	const _reqBufLen = 8 + 4 + 4
 	var _reqBuf [_reqBufLen]byte
@@ -2895,7 +2935,7 @@ func (i *DataDeviceManager) GetDataDevice(seat *Seat) (*DataDevice, error) {
 	PutUint32(_reqBuf[l:l+4], seat.ID())
 	l += 4
 	err := i.Context().WriteMsg(_reqBuf[:], nil)
-	return id, err
+	return err
 }
 
 func (i *DataDeviceManager) Destroy() error {
@@ -3023,6 +3063,11 @@ func NewShell(ctx *Context) *Shell {
 //	surface: surface to be given the shell surface role
 func (i *Shell) GetShellSurface(surface *Surface) (*ShellSurface, error) {
 	id := NewShellSurface(i.Context())
+	return id, i.GetShellSurfaceWithProxy(id, surface)
+}
+
+// GetShellSurfaceWithProxy : create a shell surface from a surface, using pre-created proxies
+func (i *Shell) GetShellSurfaceWithProxy(id *ShellSurface, surface *Surface) error {
 	const opcode = 0
 	const _reqBufLen = 8 + 4 + 4
 	var _reqBuf [_reqBufLen]byte
@@ -3036,7 +3081,7 @@ func (i *Shell) GetShellSurface(surface *Surface) (*ShellSurface, error) {
 	PutUint32(_reqBuf[l:l+4], surface.ID())
 	l += 4
 	err := i.Context().WriteMsg(_reqBuf[:], nil)
-	return id, err
+	return err
 }
 
 func (i *Shell) Destroy() error {
@@ -4031,6 +4076,11 @@ func (i *Surface) Damage(x, y, width, height int32) error {
 // milliseconds, with an undefined base.
 func (i *Surface) Frame() (*Callback, error) {
 	callback := NewCallback(i.Context())
+	return callback, i.FrameWithProxy(callback)
+}
+
+// FrameWithProxy : request a frame throttling hint, using pre-created proxies
+func (i *Surface) FrameWithProxy(callback *Callback) error {
 	const opcode = 3
 	const _reqBufLen = 8 + 4
 	var _reqBuf [_reqBufLen]byte
@@ -4042,7 +4092,7 @@ func (i *Surface) Frame() (*Callback, error) {
 	PutUint32(_reqBuf[l:l+4], callback.ID())
 	l += 4
 	err := i.Context().WriteMsg(_reqBuf[:], nil)
-	return callback, err
+	return err
 }
 
 // SetOpaqueRegion : set opaque region
@@ -4601,6 +4651,11 @@ func NewSeat(ctx *Context) *Seat {
 // be sent in this case.
 func (i *Seat) GetPointer() (*Pointer, error) {
 	id := NewPointer(i.Context())
+	return id, i.GetPointerWithProxy(id)
+}
+
+// GetPointerWithProxy : return pointer object, using pre-created proxies
+func (i *Seat) GetPointerWithProxy(id *Pointer) error {
 	const opcode = 0
 	const _reqBufLen = 8 + 4
 	var _reqBuf [_reqBufLen]byte
@@ -4612,7 +4667,7 @@ func (i *Seat) GetPointer() (*Pointer, error) {
 	PutUint32(_reqBuf[l:l+4], id.ID())
 	l += 4
 	err := i.Context().WriteMsg(_reqBuf[:], nil)
-	return id, err
+	return err
 }
 
 // GetKeyboard : return keyboard object
@@ -4627,6 +4682,11 @@ func (i *Seat) GetPointer() (*Pointer, error) {
 // be sent in this case.
 func (i *Seat) GetKeyboard() (*Keyboard, error) {
 	id := NewKeyboard(i.Context())
+	return id, i.GetKeyboardWithProxy(id)
+}
+
+// GetKeyboardWithProxy : return keyboard object, using pre-created proxies
+func (i *Seat) GetKeyboardWithProxy(id *Keyboard) error {
 	const opcode = 1
 	const _reqBufLen = 8 + 4
 	var _reqBuf [_reqBufLen]byte
@@ -4638,7 +4698,7 @@ func (i *Seat) GetKeyboard() (*Keyboard, error) {
 	PutUint32(_reqBuf[l:l+4], id.ID())
 	l += 4
 	err := i.Context().WriteMsg(_reqBuf[:], nil)
-	return id, err
+	return err
 }
 
 // GetTouch : return touch object
@@ -4653,6 +4713,11 @@ func (i *Seat) GetKeyboard() (*Keyboard, error) {
 // be sent in this case.
 func (i *Seat) GetTouch() (*Touch, error) {
 	id := NewTouch(i.Context())
+	return id, i.GetTouchWithProxy(id)
+}
+
+// GetTouchWithProxy : return touch object, using pre-created proxies
+func (i *Seat) GetTouchWithProxy(id *Touch) error {
 	const opcode = 2
 	const _reqBufLen = 8 + 4
 	var _reqBuf [_reqBufLen]byte
@@ -4664,7 +4729,7 @@ func (i *Seat) GetTouch() (*Touch, error) {
 	PutUint32(_reqBuf[l:l+4], id.ID())
 	l += 4
 	err := i.Context().WriteMsg(_reqBuf[:], nil)
-	return id, err
+	return err
 }
 
 // Release : release the seat object
@@ -7193,6 +7258,11 @@ func (i *Subcompositor) Destroy() error {
 //	parent: the parent surface
 func (i *Subcompositor) GetSubsurface(surface, parent *Surface) (*Subsurface, error) {
 	id := NewSubsurface(i.Context())
+	return id, i.GetSubsurfaceWithProxy(id, surface, parent)
+}
+
+// GetSubsurfaceWithProxy : give a surface the role sub-surface, using pre-created proxies
+func (i *Subcompositor) GetSubsurfaceWithProxy(id *Subsurface, surface, parent *Surface) error {
 	const opcode = 1
 	const _reqBufLen = 8 + 4 + 4 + 4
 	var _reqBuf [_reqBufLen]byte
@@ -7208,7 +7278,7 @@ func (i *Subcompositor) GetSubsurface(surface, parent *Surface) (*Subsurface, er
 	PutUint32(_reqBuf[l:l+4], parent.ID())
 	l += 4
 	err := i.Context().WriteMsg(_reqBuf[:], nil)
-	return id, err
+	return err
 }
 
 type SubcompositorError uint32

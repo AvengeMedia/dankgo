@@ -64,6 +64,11 @@ func NewExtDataControlManagerV1(ctx *client.Context) *ExtDataControlManagerV1 {
 // Create a new data source.
 func (i *ExtDataControlManagerV1) CreateDataSource() (*ExtDataControlSourceV1, error) {
 	id := NewExtDataControlSourceV1(i.Context())
+	return id, i.CreateDataSourceWithProxy(id)
+}
+
+// CreateDataSourceWithProxy : create a new data source, using pre-created proxies
+func (i *ExtDataControlManagerV1) CreateDataSourceWithProxy(id *ExtDataControlSourceV1) error {
 	const opcode = 0
 	const _reqBufLen = 8 + 4
 	var _reqBuf [_reqBufLen]byte
@@ -75,7 +80,7 @@ func (i *ExtDataControlManagerV1) CreateDataSource() (*ExtDataControlSourceV1, e
 	client.PutUint32(_reqBuf[l:l+4], id.ID())
 	l += 4
 	err := i.Context().WriteMsg(_reqBuf[:], nil)
-	return id, err
+	return err
 }
 
 // GetDataDevice : get a data device for a seat
@@ -83,6 +88,11 @@ func (i *ExtDataControlManagerV1) CreateDataSource() (*ExtDataControlSourceV1, e
 // Create a data device that can be used to manage a seat's selection.
 func (i *ExtDataControlManagerV1) GetDataDevice(seat *client.Seat) (*ExtDataControlDeviceV1, error) {
 	id := NewExtDataControlDeviceV1(i.Context())
+	return id, i.GetDataDeviceWithProxy(id, seat)
+}
+
+// GetDataDeviceWithProxy : get a data device for a seat, using pre-created proxies
+func (i *ExtDataControlManagerV1) GetDataDeviceWithProxy(id *ExtDataControlDeviceV1, seat *client.Seat) error {
 	const opcode = 1
 	const _reqBufLen = 8 + 4 + 4
 	var _reqBuf [_reqBufLen]byte
@@ -96,7 +106,7 @@ func (i *ExtDataControlManagerV1) GetDataDevice(seat *client.Seat) (*ExtDataCont
 	client.PutUint32(_reqBuf[l:l+4], seat.ID())
 	l += 4
 	err := i.Context().WriteMsg(_reqBuf[:], nil)
-	return id, err
+	return err
 }
 
 // Destroy : destroy the manager

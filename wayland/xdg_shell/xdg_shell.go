@@ -92,6 +92,11 @@ func (i *WmBase) Destroy() error {
 // and xdg_surface.get_popup for details.
 func (i *WmBase) CreatePositioner() (*Positioner, error) {
 	id := NewPositioner(i.Context())
+	return id, i.CreatePositionerWithProxy(id)
+}
+
+// CreatePositionerWithProxy : create a positioner object, using pre-created proxies
+func (i *WmBase) CreatePositionerWithProxy(id *Positioner) error {
 	const opcode = 1
 	const _reqBufLen = 8 + 4
 	var _reqBuf [_reqBufLen]byte
@@ -103,7 +108,7 @@ func (i *WmBase) CreatePositioner() (*Positioner, error) {
 	client.PutUint32(_reqBuf[l:l+4], id.ID())
 	l += 4
 	err := i.Context().WriteMsg(_reqBuf[:], nil)
-	return id, err
+	return err
 }
 
 // GetXdgSurface : create a shell surface from a surface
@@ -122,6 +127,11 @@ func (i *WmBase) CreatePositioner() (*Positioner, error) {
 // xdg_surface is and how it is used.
 func (i *WmBase) GetXdgSurface(surface *client.Surface) (*Surface, error) {
 	id := NewSurface(i.Context())
+	return id, i.GetXdgSurfaceWithProxy(id, surface)
+}
+
+// GetXdgSurfaceWithProxy : create a shell surface from a surface, using pre-created proxies
+func (i *WmBase) GetXdgSurfaceWithProxy(id *Surface, surface *client.Surface) error {
 	const opcode = 2
 	const _reqBufLen = 8 + 4 + 4
 	var _reqBuf [_reqBufLen]byte
@@ -135,7 +145,7 @@ func (i *WmBase) GetXdgSurface(surface *client.Surface) (*Surface, error) {
 	client.PutUint32(_reqBuf[l:l+4], surface.ID())
 	l += 4
 	err := i.Context().WriteMsg(_reqBuf[:], nil)
-	return id, err
+	return err
 }
 
 // Pong : respond to a ping event
@@ -977,6 +987,11 @@ func (i *Surface) Destroy() error {
 // xdg_toplevel is and how it is used.
 func (i *Surface) GetToplevel() (*Toplevel, error) {
 	id := NewToplevel(i.Context())
+	return id, i.GetToplevelWithProxy(id)
+}
+
+// GetToplevelWithProxy : assign the xdg_toplevel surface role, using pre-created proxies
+func (i *Surface) GetToplevelWithProxy(id *Toplevel) error {
 	const opcode = 1
 	const _reqBufLen = 8 + 4
 	var _reqBuf [_reqBufLen]byte
@@ -988,7 +1003,7 @@ func (i *Surface) GetToplevel() (*Toplevel, error) {
 	client.PutUint32(_reqBuf[l:l+4], id.ID())
 	l += 4
 	err := i.Context().WriteMsg(_reqBuf[:], nil)
-	return id, err
+	return err
 }
 
 // GetPopup : assign the xdg_popup surface role
@@ -1006,6 +1021,11 @@ func (i *Surface) GetToplevel() (*Toplevel, error) {
 //	positioner: positioner for this popup
 func (i *Surface) GetPopup(parent *Surface, positioner *Positioner) (*Popup, error) {
 	id := NewPopup(i.Context())
+	return id, i.GetPopupWithProxy(id, parent, positioner)
+}
+
+// GetPopupWithProxy : assign the xdg_popup surface role, using pre-created proxies
+func (i *Surface) GetPopupWithProxy(id *Popup, parent *Surface, positioner *Positioner) error {
 	const opcode = 2
 	const _reqBufLen = 8 + 4 + 4 + 4
 	var _reqBuf [_reqBufLen]byte
@@ -1026,7 +1046,7 @@ func (i *Surface) GetPopup(parent *Surface, positioner *Positioner) (*Popup, err
 	client.PutUint32(_reqBuf[l:l+4], positioner.ID())
 	l += 4
 	err := i.Context().WriteMsg(_reqBuf[:], nil)
-	return id, err
+	return err
 }
 
 // SetWindowGeometry : set the new window geometry
