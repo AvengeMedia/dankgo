@@ -99,26 +99,6 @@ func (i *ExtDataControlManagerV1) GetDataDevice(seat *client.Seat) (*ExtDataCont
 	return id, err
 }
 
-// GetDataDeviceWithProxy : get a data device for a seat using a pre-created proxy
-//
-// Like GetDataDevice, but uses a pre-created ExtDataControlDeviceV1 proxy.
-// This allows setting up event handlers before the request is sent.
-func (i *ExtDataControlManagerV1) GetDataDeviceWithProxy(device *ExtDataControlDeviceV1, seat *client.Seat) error {
-	const opcode = 1
-	const _reqBufLen = 8 + 4 + 4
-	var _reqBuf [_reqBufLen]byte
-	l := 0
-	client.PutUint32(_reqBuf[l:4], i.ID())
-	l += 4
-	client.PutUint32(_reqBuf[l:l+4], uint32(_reqBufLen<<16|opcode&0x0000ffff))
-	l += 4
-	client.PutUint32(_reqBuf[l:l+4], device.ID())
-	l += 4
-	client.PutUint32(_reqBuf[l:l+4], seat.ID())
-	l += 4
-	return i.Context().WriteMsg(_reqBuf[:], nil)
-}
-
 // Destroy : destroy the manager
 //
 // All objects created by the manager will still remain valid, until their
@@ -312,8 +292,7 @@ func (i *ExtDataControlDeviceV1) SetDataOfferHandler(f ExtDataControlDeviceV1Dat
 // The first selection event is sent upon binding the
 // ext_data_control_device object.
 type ExtDataControlDeviceV1SelectionEvent struct {
-	Id      *ExtDataControlOfferV1
-	OfferId uint32 // Raw object ID for external registry lookups
+	Id *ExtDataControlOfferV1
 }
 type ExtDataControlDeviceV1SelectionHandlerFunc func(ExtDataControlDeviceV1SelectionEvent)
 
@@ -352,8 +331,7 @@ func (i *ExtDataControlDeviceV1) SetFinishedHandler(f ExtDataControlDeviceV1Fini
 // primary_selection event is sent upon binding the
 // ext_data_control_device object.
 type ExtDataControlDeviceV1PrimarySelectionEvent struct {
-	Id      *ExtDataControlOfferV1
-	OfferId uint32 // Raw object ID for external registry lookups
+	Id *ExtDataControlOfferV1
 }
 type ExtDataControlDeviceV1PrimarySelectionHandlerFunc func(ExtDataControlDeviceV1PrimarySelectionEvent)
 
@@ -365,39 +343,37 @@ func (i *ExtDataControlDeviceV1) SetPrimarySelectionHandler(f ExtDataControlDevi
 func (i *ExtDataControlDeviceV1) Dispatch(opcode uint32, fd int, data []byte) {
 	switch opcode {
 	case 0:
-		// data_offer event: server creates a new object (new_id)
 		if i.dataOfferHandler == nil {
 			return
 		}
 		var e ExtDataControlDeviceV1DataOfferEvent
 		l := 0
-		newID := client.Uint32(data[l : l+4])
+		idID := client.Uint32(data[l : l+4])
+		if id, ok := i.Context().GetProxy(idID).(*ExtDataControlOfferV1); ok && !id.IsZombie() {
+			e.Id = id
+		} else if idID != 0 {
+			id := &ExtDataControlOfferV1{}
+			i.Context().RegisterWithID(id, idID)
+			e.Id = id
+		}
 		l += 4
-
-		ctx := i.Context()
-		offer := &ExtDataControlOfferV1{}
-		offer.SetContext(ctx)
-		offer.SetID(newID)
-		ctx.RegisterWithID(offer, newID)
-		e.Id = offer
 
 		i.dataOfferHandler(e)
 	case 1:
-		// selection event: nullable object reference
 		if i.selectionHandler == nil {
 			return
 		}
 		var e ExtDataControlDeviceV1SelectionEvent
 		l := 0
-		objID := client.Uint32(data[l : l+4])
-		l += 4
-
-		e.OfferId = objID
-		if objID != 0 {
-			if p := i.Context().GetProxy(objID); p != nil {
-				e.Id = p.(*ExtDataControlOfferV1)
-			}
+		idID := client.Uint32(data[l : l+4])
+		if id, ok := i.Context().GetProxy(idID).(*ExtDataControlOfferV1); ok && !id.IsZombie() {
+			e.Id = id
+		} else if idID != 0 {
+			id := &ExtDataControlOfferV1{}
+			i.Context().RegisterWithID(id, idID)
+			e.Id = id
 		}
+		l += 4
 
 		i.selectionHandler(e)
 	case 2:
@@ -408,21 +384,20 @@ func (i *ExtDataControlDeviceV1) Dispatch(opcode uint32, fd int, data []byte) {
 
 		i.finishedHandler(e)
 	case 3:
-		// primary_selection event: nullable object reference
 		if i.primarySelectionHandler == nil {
 			return
 		}
 		var e ExtDataControlDeviceV1PrimarySelectionEvent
 		l := 0
-		objID := client.Uint32(data[l : l+4])
-		l += 4
-
-		e.OfferId = objID
-		if objID != 0 {
-			if p := i.Context().GetProxy(objID); p != nil {
-				e.Id = p.(*ExtDataControlOfferV1)
-			}
+		idID := client.Uint32(data[l : l+4])
+		if id, ok := i.Context().GetProxy(idID).(*ExtDataControlOfferV1); ok && !id.IsZombie() {
+			e.Id = id
+		} else if idID != 0 {
+			id := &ExtDataControlOfferV1{}
+			i.Context().RegisterWithID(id, idID)
+			e.Id = id
 		}
+		l += 4
 
 		i.primarySelectionHandler(e)
 	}
@@ -584,6 +559,14 @@ func (i *ExtDataControlSourceV1) Dispatch(opcode uint32, fd int, data []byte) {
 
 		i.cancelledHandler(e)
 	}
+}
+
+func (i *ExtDataControlSourceV1) EventTakesFd(opcode uint32) bool {
+	switch opcode {
+	case 0:
+		return true
+	}
+	return false
 }
 
 // ExtDataControlOfferV1InterfaceName is the name of the interface as it appears in the [client.Registry].

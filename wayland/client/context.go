@@ -100,12 +100,9 @@ func (ctx *Context) GetDispatch() func() error {
 
 	return func() (dispatchErr error) {
 		proxy, ok := ctx.objects.Load(senderID)
-		if !ok {
-			return nil // Proxy already deleted via delete_id, silently ignore
-		}
-
-		if proxy.IsZombie() {
-			return nil // Zombie proxy, discard late events
+		if !ok || proxy.IsZombie() {
+			closeFd(fd)
+			return nil
 		}
 
 		sender, ok := proxy.(Dispatcher)

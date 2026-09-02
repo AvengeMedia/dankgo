@@ -24,15 +24,10 @@ type eventTakesFder interface {
 func (ctx *Context) ReadMsg() (senderID uint32, opcode uint32, fd int, msg []byte, err error) {
 	fd = -1
 
-	oob := make([]byte, oobSpace)
 	header := make([]byte, 8)
-
-	n, oobn, flags, _, err := ctx.conn.ReadMsgUnix(header, oob)
+	n, err := ctx.readMsgUnix(header, "header")
 	if err != nil {
 		return senderID, opcode, fd, msg, err
-	}
-	if err := ctx.takeAncillary(oob, oobn, flags, "header"); err != nil {
-		return senderID, opcode, fd, msg, fmt.Errorf("ctx.ReadMsg: %w", err)
 	}
 	if n != 8 {
 		return senderID, opcode, fd, msg, fmt.Errorf("ctx.ReadMsg: incorrect number of bytes read for header (n=%d)", n)
@@ -46,30 +41,44 @@ func (ctx *Context) ReadMsg() (senderID uint32, opcode uint32, fd int, msg []byt
 	msgSize := int(size) - 8
 	if msgSize > 0 {
 		msg = make([]byte, msgSize)
-		if oobn > 0 {
-			n, err = ctx.conn.Read(msg)
-		} else {
-			oob = make([]byte, oobSpace)
-			n, oobn, flags, _, err = ctx.conn.ReadMsgUnix(msg, oob)
-			if err == nil {
-				err = ctx.takeAncillary(oob, oobn, flags, "msg")
-			}
-		}
+		n, err = ctx.readMsgUnix(msg, "msg")
 		if err != nil {
-			return senderID, opcode, fd, msg, fmt.Errorf("ctx.ReadMsg: %w", err)
+			return senderID, opcode, fd, msg, err
 		}
 		if n != msgSize {
 			return senderID, opcode, fd, msg, fmt.Errorf("ctx.ReadMsg: incorrect number of bytes read for msg (n=%d, msgSize=%d)", n, msgSize)
 		}
 	}
 
-	if p, ok := ctx.objects.Load(senderID); ok {
-		if e, ok := p.(eventTakesFder); ok && e.EventTakesFd(opcode) {
-			fd = ctx.popFd()
-		}
+	if ctx.eventTakesFd(senderID, opcode) {
+		fd = ctx.popFd()
 	}
 
 	return senderID, opcode, fd, msg, nil
+}
+
+func (ctx *Context) readMsgUnix(buf []byte, source string) (int, error) {
+	oob := make([]byte, oobSpace)
+	n, oobn, flags, _, err := ctx.conn.ReadMsgUnix(buf, oob)
+	if err != nil {
+		return n, err
+	}
+	if err := ctx.takeAncillary(oob, oobn, flags, source); err != nil {
+		return n, fmt.Errorf("ctx.ReadMsg: %w", err)
+	}
+	return n, nil
+}
+
+func (ctx *Context) eventTakesFd(senderID, opcode uint32) bool {
+	p, ok := ctx.objects.Load(senderID)
+	if !ok {
+		return false
+	}
+	e, ok := p.(eventTakesFder)
+	if !ok {
+		return false
+	}
+	return e.EventTakesFd(opcode)
 }
 
 func (ctx *Context) takeAncillary(oob []byte, oobn, flags int, source string) error {
@@ -108,8 +117,15 @@ func (ctx *Context) closeFds() {
 
 func (ctx *Context) closeFdList(fds []int) {
 	for _, fd := range fds {
-		_ = unix.Close(fd)
+		closeFd(fd)
 	}
+}
+
+func closeFd(fd int) {
+	if fd == -1 {
+		return
+	}
+	_ = unix.Close(fd)
 }
 
 func getFdsFromOob(oob []byte, oobn int, source string) ([]int, error) {

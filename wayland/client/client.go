@@ -2403,6 +2403,14 @@ func (i *DataSource) Dispatch(opcode uint32, fd int, data []byte) {
 	}
 }
 
+func (i *DataSource) EventTakesFd(opcode uint32) bool {
+	switch opcode {
+	case 1:
+		return true
+	}
+	return false
+}
+
 // DataDeviceInterfaceName is the name of the interface as it appears in the [client.Registry].
 // It can be used to match the [client.RegistryGlobalEvent.Interface] in the
 // [Registry.SetGlobalHandler] and can be used in [Registry.Bind] if this applies.
@@ -6119,6 +6127,14 @@ func (i *Keyboard) Dispatch(opcode uint32, fd int, data []byte) {
 
 		i.repeatInfoHandler(e)
 	}
+}
+
+func (i *Keyboard) EventTakesFd(opcode uint32) bool {
+	switch opcode {
+	case 0:
+		return true
+	}
+	return false
 }
 
 // TouchInterfaceName is the name of the interface as it appears in the [client.Registry].

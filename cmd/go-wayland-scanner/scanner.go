@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/iancoleman/strcase"
@@ -699,13 +700,7 @@ func writeEventDispatcher(w io.Writer, ifaceName string, v Interface) {
 		eventName := toCamel(e.Name)
 		eventNameLower := toLowerCamel(e.Name)
 
-		hasFd := false
-		for _, arg := range e.Args {
-			if arg.Type == "fd" {
-				hasFd = true
-				break
-			}
-		}
+		hasFd := eventHasFd(e)
 
 		isDeleteID := protocol.Name == "wayland" && v.Name == "wl_display" && e.Name == "delete_id"
 
@@ -830,6 +825,37 @@ func writeEventDispatcher(w io.Writer, ifaceName string, v Interface) {
 	}
 	fmt.Fprintf(w, "}\n")
 	fmt.Fprintf(w, "}\n")
+
+	writeEventTakesFd(w, ifaceName, v)
+}
+
+func writeEventTakesFd(w io.Writer, ifaceName string, v Interface) {
+	var fdOpcodes []string
+	for i, e := range v.Events {
+		if eventHasFd(e) {
+			fdOpcodes = append(fdOpcodes, strconv.Itoa(i))
+		}
+	}
+	if len(fdOpcodes) == 0 {
+		return
+	}
+
+	fmt.Fprintf(w, "func (i *%s) EventTakesFd(opcode uint32) bool {\n", ifaceName)
+	fmt.Fprintf(w, "switch opcode {\n")
+	fmt.Fprintf(w, "case %s:\n", strings.Join(fdOpcodes, ", "))
+	fmt.Fprintf(w, "return true\n")
+	fmt.Fprintf(w, "}\n")
+	fmt.Fprintf(w, "return false\n")
+	fmt.Fprintf(w, "}\n")
+}
+
+func eventHasFd(e Event) bool {
+	for _, arg := range e.Args {
+		if arg.Type == "fd" {
+			return true
+		}
+	}
+	return false
 }
 
 func toCamel(s string) string {

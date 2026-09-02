@@ -160,6 +160,73 @@ func TestReadMsgReportsCtrunc(t *testing.T) {
 	}
 }
 
+func TestReadMsgQueuesFdsSentWithBody(t *testing.T) {
+	ctx, peer := testConn(t)
+	ctx.RegisterWithID(&fdEventProxy{}, 1)
+
+	w, r := pipe(t)
+	msg := wlMsg(1, 0, wlString("text/plain"))
+	if _, err := peer.Write(msg[:8]); err != nil {
+		t.Fatalf("write header: %v", err)
+	}
+	if _, _, err := peer.WriteMsgUnix(msg[8:], unix.UnixRights(w), nil); err != nil {
+		t.Fatalf("WriteMsgUnix: %v", err)
+	}
+	unix.Close(w)
+
+	_, _, fd, _, err := ctx.ReadMsg()
+	if err != nil {
+		t.Fatalf("ReadMsg: %v", err)
+	}
+	if fd < 0 {
+		t.Fatal("fd sent with the body was dropped")
+	}
+	if _, err := unix.Write(fd, []byte("ok")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	unix.Close(fd)
+	got := make([]byte, 2)
+	if _, err := io.ReadFull(r, got); err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(got) != "ok" {
+		t.Fatalf("pipe %q", got)
+	}
+}
+
+func TestDispatchClosesFdForZombie(t *testing.T) {
+	ctx, peer := testConn(t)
+	p := &fdEventProxy{}
+	ctx.RegisterWithID(p, 1)
+	p.MarkZombie()
+
+	w, _ := pipe(t)
+	if _, _, err := peer.WriteMsgUnix(wlMsg(1, 0, nil), unix.UnixRights(w), nil); err != nil {
+		t.Fatalf("WriteMsgUnix: %v", err)
+	}
+	unix.Close(w)
+	before := openFdCount(t)
+
+	if err := ctx.Dispatch(); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if len(ctx.fds) != 0 {
+		t.Fatalf("queued %d fds, want 0", len(ctx.fds))
+	}
+	if after := openFdCount(t); after != before {
+		t.Fatalf("open fds %d -> %d, received fd leaked", before, after)
+	}
+}
+
+func openFdCount(t *testing.T) int {
+	t.Helper()
+	entries, err := os.ReadDir("/proc/self/fd")
+	if err != nil {
+		t.Skip("no /proc/self/fd")
+	}
+	return len(entries)
+}
+
 func TestReadMsgClosesQueuedFdsOnClose(t *testing.T) {
 	ctx, peer := testConn(t)
 	// No proxy registered → event does not pop. The fd must not leak
