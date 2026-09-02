@@ -16,6 +16,7 @@ type Context struct {
 	objects   syncmap.Map[uint32, Proxy] // map[uint32]Proxy - thread-safe concurrent map
 	currentID uint32
 	idMu      sync.Mutex // protects currentID increment
+	fds       []int      // SCM_RIGHTS queue; decoupled from recvmsg boundaries
 }
 
 func (ctx *Context) Register(p Proxy) {
@@ -51,6 +52,7 @@ func (ctx *Context) GetProxy(id uint32) Proxy {
 }
 
 func (ctx *Context) Close() error {
+	ctx.closeFds()
 	return ctx.conn.Close()
 }
 
