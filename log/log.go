@@ -144,7 +144,9 @@ func GetLogger() *Logger {
 		logger = &Logger{base}
 
 		if path := fileEnv(); path != "" {
-			_ = SetLogFile(path)
+			logMu.Lock()
+			_ = attachLogFile(logger, path)
+			logMu.Unlock()
 		}
 	})
 	return logger
@@ -163,15 +165,22 @@ func SetLevel(level string) {
 // stderr is a TTY and route the file through ansiStripWriter so the file stays
 // plain while stderr keeps its colors.
 func SetLogFile(path string) error {
+	l := GetLogger()
+
 	logMu.Lock()
 	defer logMu.Unlock()
 
+	return attachLogFile(l, path)
+}
+
+// attachLogFile must not call GetLogger: it runs inside the GetLogger once-init,
+// and re-entering the once deadlocks on its own mutex.
+func attachLogFile(l *Logger, path string) error {
 	if logFile != nil {
 		logFile.Close()
 		logFile = nil
 	}
 
-	l := GetLogger()
 	if path == "" {
 		l.SetOutput(logStderr)
 		applyColorProfile(l, logStderr)
