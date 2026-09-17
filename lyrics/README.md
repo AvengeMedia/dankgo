@@ -61,9 +61,11 @@ Source is [example/main.go](example/main.go).
 
 That's the whole search, there is no library scan. A local file beats everything else and needs no network. Files over 256 KiB are ignored. MPRIS players report this URL as `xesam:url`.
 
-**2. Disk cache.** `Options.CacheDir`, or `dankgo/lyrics` under `os.UserCacheDir()`. One JSON file per track per provider. Misses are cached too, for 14 days. A line-synced entry older than 14 days is re-requested from its provider once, and replaced only if word sync came back. `Options.DisableUpgrade` turns that off. `client.Prune()` removes entries older than 90 days, it no-ops if it already ran in the last 24h.
+**2. Disk cache.** `Options.CacheDir`, or `dankgo/lyrics` under `os.UserCacheDir()`. One JSON file per track per provider. Misses are cached too, for 14 days. Not a BetterLyrics 401 though, that only means their server has not cached the track yet. A line-synced entry older than 14 days is re-requested from its provider once, and replaced only if word sync came back. `Options.DisableUpgrade` turns that off. `client.Prune()` removes entries older than 90 days, it no-ops if it already ran in the last 24h.
 
 **3. Providers.** All requested at the same time, 12 second timeout. Priority still holds: if LRCLIB answers first but BetterLyrics is ahead of it in the list, the LRCLIB result is held until BetterLyrics finishes or the tiemout hits.
+
+Word sync outranks priority. A word-synced result wins as soon as every word-capable provider ahead of it has finished. When the priority winner is only line-synced or plain and a word-capable provider is still out, it is held for up to 2 seconds in case word sync shows up. LRCLIB is never waited on for this, it has word sync too rarely.
 
 | Provider       | Format                    | Sync                                  |
 | -------------- | ------------------------- | ------------------------------------- |
@@ -81,6 +83,7 @@ type Result struct {
     Found  bool
     Source Provider // which provider, or Sidecar for a local file
     Cached bool
+    Attribution Attribution // Name, URL, and Text when the source asks for specific wording
     Lyrics
 }
 
@@ -129,6 +132,7 @@ A new provider: add the `Provider` const, write a `fetchX` method on `Client` th
   "found": true,
   "source": "lyricsplus",
   "cached": false,
+  "attribution": { "name": "LyricsPlus", "url": "https://github.com/ibratabian17/lyricsplus" },
   "synced": [
     {
       "t": 31.4,

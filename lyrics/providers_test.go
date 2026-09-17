@@ -67,6 +67,24 @@ func TestConcurrentProviderPriorityAndCancellation(t *testing.T) {
 	}
 }
 
+func TestWordSyncOutranksPriority(t *testing.T) {
+	client := isolate(t)
+	client.wordGrace = time.Minute
+	lineReady := make(chan struct{})
+	client.fetch = func(_ context.Context, provider Provider, _ Request) (*Lyrics, error) {
+		if provider == LRCLIB {
+			close(lineReady)
+			return &Lyrics{Synced: []Line{{Text: "line synced"}}}, nil
+		}
+		<-lineReady
+		return &Lyrics{Synced: []Line{{Text: "word synced", Words: []Word{{Text: "word synced"}}}}}, nil
+	}
+	result, err := client.Lookup(context.Background(), Request{Artist: "Artist", Title: "Track", Providers: []Provider{LRCLIB, LyricsPlus}})
+	if err != nil || result.Source != LyricsPlus {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
 func TestProviderCacheAndDisabledProviders(t *testing.T) {
 	client := isolate(t)
 	calls := map[Provider]int{}
@@ -180,7 +198,7 @@ func TestLyricsPlusBoundsIncludeUntimedFallbacks(t *testing.T) {
 	}
 }
 
-// betterlyrics answers 401 for a track it has no match for, so a status-only miss
+// betterlyrics answers 401 for a track it has not cached, so a status-only miss
 // must not surface as an error, and must not mask another provider's real answer.
 func TestProviderMissStatusesAreNotErrors(t *testing.T) {
 	for status, wantMiss := range map[int]bool{

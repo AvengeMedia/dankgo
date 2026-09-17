@@ -14,7 +14,10 @@ import (
 
 const defaultUserAgent = "dankgo-lyrics (+https://github.com/AvengeMedia/dankgo)"
 
-var errNotFound = errors.New("lyrics not found")
+var (
+	errNotFound = errors.New("lyrics not found")
+	errUncached = fmt.Errorf("%w: not cached by provider", errNotFound)
+)
 
 // StatusError is a non-2xx provider response that is not a plain "no such track".
 type StatusError struct {
@@ -31,6 +34,13 @@ var fetchers = map[Provider]func(*Client, context.Context, Request) (*Lyrics, er
 	BetterLyrics: (*Client).fetchBetterLyrics,
 	LyricsPlus:   (*Client).fetchLyricsPlus,
 	Unison:       (*Client).fetchUnison,
+}
+
+// wordProviders are worth holding a line-synced winner for. lrclib has word sync too rarely.
+var wordProviders = map[Provider]bool{
+	BetterLyrics: true,
+	Unison:       true,
+	LyricsPlus:   true,
 }
 
 func (c *Client) fetchProvider(ctx context.Context, provider Provider, req Request) (*Lyrics, error) {
@@ -80,11 +90,13 @@ func (c *Client) get(ctx context.Context, endpoint string, query url.Values, tim
 	return readBounded(resp.Body)
 }
 
-// Providers disagree on the "no match for this track" status: lrclib answers 404,
-// betterlyrics answers 401. Only a transient status is worth reporting as an error.
+// betterlyrics answers 401 for a track its server has not cached yet, which another
+// client can change at any time. Only a transient status is worth reporting as an error.
 func classifyStatus(code int) error {
 	switch code {
-	case http.StatusNotFound, http.StatusUnauthorized, http.StatusForbidden, http.StatusGone:
+	case http.StatusUnauthorized:
+		return errUncached
+	case http.StatusNotFound, http.StatusForbidden, http.StatusGone:
 		return errNotFound
 	}
 	return &StatusError{Code: code}

@@ -174,8 +174,9 @@ func (r Request) query(title, artist, album, duration string) url.Values {
 }
 
 type Result struct {
-	Found  bool     `json:"found"`
-	Source Provider `json:"source"`
-	Cached bool     `json:"cached"`
+	Found       bool        `json:"found"`
+	Source      Provider    `json:"source"`
+	Cached      bool        `json:"cached"`
+	Attribution Attribution `json:"attribution,omitzero"`
 	Lyrics
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,7 +14,9 @@ import (
 
 func isolate(t *testing.T) *Client {
 	t.Helper()
-	return New(Options{CacheDir: t.TempDir()})
+	client := New(Options{CacheDir: t.TempDir()})
+	client.wordGrace = 10 * time.Millisecond
+	return client
 }
 
 func denyNetwork(t *testing.T, client *Client) {
@@ -75,6 +78,27 @@ func TestLookupCachesMissAndDoesNotRefetch(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Errorf("fetch called %d times, want 1", calls)
+	}
+}
+
+func TestUncachedByProviderIsNotStoredAsMiss(t *testing.T) {
+	client := isolate(t)
+
+	calls := 0
+	client.fetch = func(context.Context, Provider, Request) (*Lyrics, error) {
+		calls++
+		return nil, classifyStatus(http.StatusUnauthorized)
+	}
+
+	req := Request{Artist: "Cynthia Harrell", Title: "Snake Eater", Providers: []Provider{BetterLyrics}}
+	for range 2 {
+		result, err := client.Lookup(context.Background(), req)
+		if err != nil || result.Found {
+			t.Fatalf("Lookup() = %+v, %v", result, err)
+		}
+	}
+	if calls != 2 {
+		t.Errorf("fetch called %d times, want 2", calls)
 	}
 }
 
