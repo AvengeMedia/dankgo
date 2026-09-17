@@ -15,6 +15,7 @@ import (
 const (
 	cacheVersion  = 3
 	negativeTTL   = 14 * 24 * time.Hour
+	upgradeTTL    = 14 * 24 * time.Hour
 	entryMaxAge   = 90 * 24 * time.Hour
 	pruneInterval = 24 * time.Hour
 	pruneSentinel = ".lastprune"
@@ -26,6 +27,10 @@ type cacheEntry struct {
 	Source  Provider `json:"source,omitempty"`
 	Miss    bool     `json:"miss,omitempty"`
 	Lyrics
+}
+
+func (e *cacheEntry) awaitsWordSync() bool {
+	return len(e.Synced) > 0 && !e.wordSynced() && time.Since(time.Unix(e.Fetched, 0)) > upgradeTTL
 }
 
 func cacheKey(req Request) string {

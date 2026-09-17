@@ -16,8 +16,9 @@ func main() {
 		os.Exit(2)
 	}
 	req := lyrics.Request{
-		Artist: os.Args[1],
-		Title:  os.Args[2],
+		Artist:    os.Args[1],
+		Title:     os.Args[2],
+		Providers: []lyrics.Provider{lyrics.Unison},
 	}
 	if len(os.Args) > 3 {
 		req.Album = os.Args[3]

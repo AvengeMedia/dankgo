@@ -30,12 +30,15 @@ type Options struct {
 	// CacheDir defaults to dankgo/lyrics under os.UserCacheDir.
 	CacheDir  string
 	UserAgent string
+	// DisableUpgrade stops cached line-synced lyrics from being re-requested for word sync.
+	DisableUpgrade bool
 }
 
 // Client is safe for concurrent use. Rate limits and request dedup are per Client, so share one.
 type Client struct {
 	cacheDir  string
 	userAgent string
+	upgrade   bool
 	http      *http.Client
 	fetch     func(context.Context, Provider, Request) (*Lyrics, error)
 	lookups   singleflight.Group
@@ -48,6 +51,7 @@ func New(opts Options) *Client {
 	client := &Client{
 		cacheDir:    opts.CacheDir,
 		userAgent:   opts.UserAgent,
+		upgrade:     !opts.DisableUpgrade,
 		http:        newHTTPClient(),
 		rateBuckets: map[Provider]*rateBucket{},
 	}
@@ -181,6 +185,9 @@ func (c *Client) lookupProviders(ctx context.Context, providers []Provider, req 
 func (c *Client) lookupProvider(ctx context.Context, provider Provider, req Request) (*Result, error) {
 	key := providerCacheKey(provider, req)
 	if entry, ok := c.loadCache(key); ok {
+		if c.upgrade && !req.CacheOnly && entry.awaitsWordSync() {
+			c.upgradeCache(ctx, key, provider, req, entry)
+		}
 		return fromCache(entry), nil
 	}
 	if req.CacheOnly {
@@ -202,6 +209,22 @@ func (c *Client) lookupProvider(ctx context.Context, provider Provider, req Requ
 	}
 	c.storeCache(key, &cacheEntry{Source: provider, Lyrics: *found})
 	return &Result{Found: true, Source: provider, Lyrics: *found}, nil
+}
+
+// upgradeCache swaps a line-synced entry for word sync once the provider has it.
+// The entry is restamped either way, so the provider is asked once per upgradeTTL.
+func (c *Client) upgradeCache(ctx context.Context, key string, provider Provider, req Request, entry *cacheEntry) {
+	if !c.allowRequest(provider) {
+		return
+	}
+	found, err := c.fetch(ctx, provider, req)
+	if err != nil && !errors.Is(err, errNotFound) {
+		return
+	}
+	if err == nil && found.wordSynced() {
+		entry.Lyrics = *found
+	}
+	c.storeCache(key, entry)
 }
 
 func fromCache(entry *cacheEntry) *Result {

@@ -3,6 +3,7 @@ package lyrics
 import (
 	"math"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,6 +17,7 @@ const (
 	LRCLIB       Provider = "lrclib"
 	BetterLyrics Provider = "betterlyrics"
 	LyricsPlus   Provider = "lyricsplus"
+	Unison       Provider = "unison"
 
 	// Sidecar is a Result.Source only, not requestable.
 	Sidecar Provider = "sidecar"
@@ -23,7 +25,7 @@ const (
 
 // DefaultProviders is used when Request.Providers is nil.
 func DefaultProviders() []Provider {
-	return []Provider{BetterLyrics, LyricsPlus, LRCLIB}
+	return []Provider{BetterLyrics, Unison, LyricsPlus, LRCLIB}
 }
 
 // Seconds from the start of the track.
@@ -132,6 +134,10 @@ func trimWords(words []Word) []Word {
 		words = words[:last]
 	}
 	return words
+}
+
+func (l *Lyrics) wordSynced() bool {
+	return slices.ContainsFunc(l.Synced, func(line Line) bool { return len(line.Words) > 0 })
 }
 
 func (l *Lyrics) Empty() bool {

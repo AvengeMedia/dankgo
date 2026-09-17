@@ -94,6 +94,38 @@ func TestNegativeCacheExpires(t *testing.T) {
 	}
 }
 
+func TestStaleLineSyncedEntryUpgradesToWordSync(t *testing.T) {
+	for _, upgraded := range []bool{true, false} {
+		client := isolate(t)
+		req := Request{Artist: "Cynthia Harrell", Title: "Snake Eater", Providers: []Provider{LRCLIB}}
+		writeEntry(t, client, providerCacheKey(LRCLIB, req), cacheEntry{
+			Version: cacheVersion,
+			Fetched: time.Now().Add(-upgradeTTL - time.Hour).Unix(),
+			Source:  LRCLIB,
+			Lyrics:  Lyrics{Synced: []Line{{Text: "cached"}}},
+		})
+		calls := 0
+		client.fetch = func(context.Context, Provider, Request) (*Lyrics, error) {
+			calls++
+			if !upgraded {
+				return &Lyrics{Synced: []Line{{Text: "refetched"}}}, nil
+			}
+			return &Lyrics{Synced: []Line{{Text: "refetched", Words: []Word{{Text: "refetched"}}}}}, nil
+		}
+		var result *Result
+		for range 2 {
+			var err error
+			if result, err = client.Lookup(context.Background(), req); err != nil {
+				t.Fatalf("Lookup() error = %v", err)
+			}
+		}
+		want := map[bool]string{true: "refetched", false: "cached"}[upgraded]
+		if calls != 1 || result.Synced[0].Text != want {
+			t.Errorf("upgraded=%t: %d fetches, serving %q, want 1 fetch serving %q", upgraded, calls, result.Synced[0].Text, want)
+		}
+	}
+}
+
 func TestCacheKeyFoldsIdentity(t *testing.T) {
 	base := cacheKey(Request{Artist: "Cynthia Harrell", Title: "Snake Eater", Album: "MGS3", Duration: 180 * time.Second})
 

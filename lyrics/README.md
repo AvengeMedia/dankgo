@@ -1,6 +1,6 @@
 # lyrics
 
-Lyrics lookup for a track. Checks for a local .lrc first, then a disk cache, then LRCLIB / BetterLyrics / LyricsPlus. Returns word-synced lyrics when a source has them, otherwise line-synced, otherwise plain text.
+Lyrics lookup for a track. Checks for a local .lrc first, then a disk cache, then LRCLIB / BetterLyrics / Unison / LyricsPlus. Returns word-synced lyrics when a source has them, otherwise line-synced, otherwise plain text.
 
 This is the lyrics engine from DMS, pulled out so other things can use it.
 
@@ -27,7 +27,7 @@ Artist and title are required. The rest of `Request` is optional:
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Album`, `Duration` | Passed to the providers to narrow the match. Duration is rounded to the second.                                                                 |
 | `FileURL`           | The track's `file://` URL. Turns on the local file lookup below.                                                                                |
-| `Providers`         | Priority order. nil = `DefaultProviders()`, which is BetterLyrics, LyricsPlus, LRCLIB. An empty non-nil slice = no providers, local files only. |
+| `Providers`         | Priority order. nil = `DefaultProviders()`, which is BetterLyrics, Unison, LyricsPlus, LRCLIB. An empty non-nil slice = no providers, local files only. |
 | `CacheOnly`         | Never hit the network. Local files and cached results only.                                                                                     |
 
 Make one `Client` and keep it. The rate limiter and request dedup live on it.
@@ -61,13 +61,14 @@ Source is [example/main.go](example/main.go).
 
 That's the whole search, there is no library scan. A local file beats everything else and needs no network. Files over 256 KiB are ignored. MPRIS players report this URL as `xesam:url`.
 
-**2. Disk cache.** `Options.CacheDir`, or `dankgo/lyrics` under `os.UserCacheDir()`. One JSON file per track per provider. Misses are cached too, for 14 days. `client.Prune()` removes entries older than 90 days, it no-ops if it already ran in the last 24h.
+**2. Disk cache.** `Options.CacheDir`, or `dankgo/lyrics` under `os.UserCacheDir()`. One JSON file per track per provider. Misses are cached too, for 14 days. A line-synced entry older than 14 days is re-requested from its provider once, and replaced only if word sync came back. `Options.DisableUpgrade` turns that off. `client.Prune()` removes entries older than 90 days, it no-ops if it already ran in the last 24h.
 
 **3. Providers.** All requested at the same time, 12 second timeout. Priority still holds: if LRCLIB answers first but BetterLyrics is ahead of it in the list, the LRCLIB result is held until BetterLyrics finishes or the tiemout hits.
 
 | Provider       | Format                    | Sync                                  |
 | -------------- | ------------------------- | ------------------------------------- |
 | `BetterLyrics` | TTML                      | word, voices, backing vocals          |
+| `Unison`       | TTML, LRC or plain        | whatever was submitted                |
 | `LyricsPlus`   | JSON                      | word, voices, backing vocals          |
 | `LRCLIB`       | LRC, sometimes Lyricsfile | line, word when there is a Lyricsfile |
 

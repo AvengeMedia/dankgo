@@ -30,6 +30,7 @@ var fetchers = map[Provider]func(*Client, context.Context, Request) (*Lyrics, er
 	LRCLIB:       (*Client).fetchLrclib,
 	BetterLyrics: (*Client).fetchBetterLyrics,
 	LyricsPlus:   (*Client).fetchLyricsPlus,
+	Unison:       (*Client).fetchUnison,
 }
 
 func (c *Client) fetchProvider(ctx context.Context, provider Provider, req Request) (*Lyrics, error) {
