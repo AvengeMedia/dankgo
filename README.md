@@ -21,6 +21,7 @@ Every app in the suite was carrying its own copy of the same logger, unix-socket
 | `httpapi` | huma/chi scaffold: `NewHumaConfig`, `/docs` page, router with health + recoverer, graceful `Server`. Use à la carte or via `NewRouter`. |
 | `httpapi/middleware` | The chi-ported logger/recoverer/request-id set. |
 | `netutil` | `GetIPAddress` header dance. |
+| `lyrics` | Song lyrics lookup: sidecar files, disk cache, then LRCLIB / BetterLyrics / LyricsPlus raced in priority order. Typed line and word timing, voices, backing vocals. LRC, TTML and Lyricsfile parsers usable on their own. |
 | `app` | Thin bootstrap: `app.New(info, rootCmd)` wires logging + version, `app.Serve(ctx, runners...)` handles signals and shutdown. Not a framework. |
 
 ## Using it
