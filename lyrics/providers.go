@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -34,6 +35,8 @@ var fetchers = map[Provider]func(*Client, context.Context, Request) (*Lyrics, er
 	BetterLyrics: (*Client).fetchBetterLyrics,
 	LyricsPlus:   (*Client).fetchLyricsPlus,
 	Unison:       (*Client).fetchUnison,
+	KuGou:        (*Client).fetchKuGou,
+	YouTubeMusic: (*Client).fetchYouTubeMusic,
 }
 
 // wordProviders are worth holding a line-synced winner for. lrclib has word sync too rarely.
@@ -41,6 +44,7 @@ var wordProviders = map[Provider]bool{
 	BetterLyrics: true,
 	Unison:       true,
 	LyricsPlus:   true,
+	KuGou:        true,
 }
 
 func (c *Client) fetchProvider(ctx context.Context, provider Provider, req Request) (*Lyrics, error) {
@@ -72,10 +76,16 @@ func (c *Client) get(ctx context.Context, endpoint string, query url.Values, tim
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?"+query.Encode(), nil)
+	// kugou search finds nothing for "a - b" when the spaces are sent as '+'
+	rawQuery := strings.ReplaceAll(query.Encode(), "+", "%20")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?"+rawQuery, nil)
 	if err != nil {
 		return nil, err
 	}
+	return c.do(req)
+}
+
+func (c *Client) do(req *http.Request) ([]byte, error) {
 	req.Header.Set("User-Agent", c.userAgent)
 	req.Header.Set("Accept", "application/json")
 
@@ -118,6 +128,10 @@ func (c *Client) getJSON(ctx context.Context, endpoint string, query url.Values,
 	if err != nil {
 		return err
 	}
+	return decodeJSON(body, payload)
+}
+
+func decodeJSON(body []byte, payload any) error {
 	if err := json.Unmarshal(body, payload); err != nil {
 		return fmt.Errorf("invalid lyrics response: %w", err)
 	}

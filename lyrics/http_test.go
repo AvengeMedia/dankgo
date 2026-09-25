@@ -21,6 +21,8 @@ func TestGet(t *testing.T) {
 		switch r.URL.Query().Get("case") {
 		case "agent":
 			w.Write([]byte(r.UserAgent()))
+		case "query":
+			w.Write([]byte(r.URL.RawQuery))
 		case "large":
 			w.Write([]byte(strings.Repeat("x", MaxSourceBytes+1)))
 		case "redirect":
@@ -38,6 +40,9 @@ func TestGet(t *testing.T) {
 
 	if body, err := get("agent"); err != nil || string(body) != "test-agent" {
 		t.Errorf("user agent = %q, %v", body, err)
+	}
+	if body, err := client.get(context.Background(), server.URL, url.Values{"case": {"query"}, "q": {"a - b"}}, time.Second); err != nil || !strings.Contains(string(body), "q=a%20-%20b") {
+		t.Errorf("query = %q, %v", body, err)
 	}
 	if _, err := get("large"); !errors.Is(err, ErrTooLarge) {
 		t.Errorf("oversized body error = %v", err)

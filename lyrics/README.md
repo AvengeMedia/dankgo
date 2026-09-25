@@ -1,6 +1,6 @@
 # lyrics
 
-Lyrics lookup for a track. Checks for a local .lrc first, then a disk cache, then LRCLIB / BetterLyrics / Unison / LyricsPlus. Returns word-synced lyrics when a source has them, otherwise line-synced, otherwise plain text.
+Lyrics lookup for a track. Checks for a local .lrc first, then a disk cache, then LRCLIB / BetterLyrics / Unison / LyricsPlus / KuGou / YouTube Music. Returns word-synced lyrics when a source has them, otherwise line-synced, otherwise plain text.
 
 This is the lyrics engine from DMS, pulled out so other things can use it.
 
@@ -27,7 +27,7 @@ Artist and title are required. The rest of `Request` is optional:
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Album`, `Duration` | Passed to the providers to narrow the match. Duration is rounded to the second.                                                                 |
 | `FileURL`           | The track's `file://` URL. Turns on the local file lookup below.                                                                                |
-| `Providers`         | Priority order. nil = `DefaultProviders()`, which is BetterLyrics, Unison, LyricsPlus, LRCLIB. An empty non-nil slice = no providers, local files only. |
+| `Providers`         | Priority order. nil = `DefaultProviders()`, which is BetterLyrics, Unison, LyricsPlus, KuGou, LRCLIB, YouTubeMusic. An empty non-nil slice = no providers, local files only. |
 | `CacheOnly`         | Never hit the network. Local files and cached results only.                                                                                     |
 
 Make one `Client` and keep it. The rate limiter and request dedup live on it.
@@ -72,7 +72,9 @@ Word sync outranks priority. A word-synced result wins as soon as every word-cap
 | `BetterLyrics` | TTML                      | word, voices, backing vocals          |
 | `Unison`       | TTML, LRC or plain        | whatever was submitted                |
 | `LyricsPlus`   | JSON                      | word, voices, backing vocals          |
+| `KuGou`        | KRC, LRC if KRC fails     | word, line from the LRC fallback      |
 | `LRCLIB`       | LRC, sometimes Lyricsfile | line, word when there is a Lyricsfile |
+| `YouTubeMusic` | JSON                      | line, plain when a line has no timing |
 
 Each provider gets a burst of 10 requests, then one more every 2 seconds. Over that, `Lookup` returns `ErrRateLimited`.
 

@@ -18,6 +18,8 @@ const (
 	BetterLyrics Provider = "betterlyrics"
 	LyricsPlus   Provider = "lyricsplus"
 	Unison       Provider = "unison"
+	KuGou        Provider = "kugou"
+	YouTubeMusic Provider = "youtubemusic"
 
 	// Sidecar is a Result.Source only, not requestable.
 	Sidecar Provider = "sidecar"
@@ -25,7 +27,7 @@ const (
 
 // DefaultProviders is used when Request.Providers is nil.
 func DefaultProviders() []Provider {
-	return []Provider{BetterLyrics, Unison, LyricsPlus, LRCLIB}
+	return []Provider{BetterLyrics, Unison, LyricsPlus, KuGou, LRCLIB, YouTubeMusic}
 }
 
 // Seconds from the start of the track.
@@ -160,6 +162,14 @@ type Request struct {
 
 func (r Request) seconds() int {
 	return max(0, int(r.Duration.Round(time.Second)/time.Second))
+}
+
+const durationSlack = 8
+
+// matchesDuration allows for catalogs that time the same recording a few seconds apart.
+func (r Request) matchesDuration(seconds int) bool {
+	want := r.seconds()
+	return want == 0 || max(want-seconds, seconds-want) <= durationSlack
 }
 
 func (r Request) query(title, artist, album, duration string) url.Values {
