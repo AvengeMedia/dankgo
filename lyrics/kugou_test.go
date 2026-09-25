@@ -39,3 +39,22 @@ func TestKuGouKRC(t *testing.T) {
 		t.Fatalf("instrumental marker: %+v, %v", parsed, err)
 	}
 }
+
+func TestKuGouMatchesTheRequestedTrack(t *testing.T) {
+	levels := Request{Title: "AVICII - LEVELS (RETROVISION FLIP)", Artist: "RetroVision"}
+	hideAway := Request{Title: `"Hide away" (VACEUS Techno remix)`, Artist: "VACEUS"}
+	for _, test := range []struct {
+		req            Request
+		title, singers string
+		want           bool
+	}{
+		{levels, "Heroes", "RetroVision", false},
+		{hideAway, "Hide Away", "DJ文宝", false},
+		{hideAway, "Hide Away", "VACEUS、Jason Wats", true},
+		{Request{Title: "Get Lucky", Artist: "Daft Punk"}, "Get Lucky (Radio Edit)", "Daft Punk、Pharrell Williams", true},
+	} {
+		if got := kugouMatches(test.req, test.title, test.singers); got != test.want {
+			t.Errorf("%q by %q for %+v = %t", test.title, test.singers, test.req, got)
+		}
+	}
+}
