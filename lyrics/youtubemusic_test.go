@@ -3,19 +3,24 @@ package lyrics
 import (
 	"encoding/json"
 	"reflect"
+	"strconv"
 	"testing"
 	"time"
 )
 
 func TestYouTubeMusicPicksTheMatchingSong(t *testing.T) {
-	song := func(id, length string) string {
+	song := func(id, title, artist, length string) string {
 		return `{"musicResponsiveListItemRenderer":{"playlistItemData":{"videoId":"` + id + `"},"flexColumns":[` +
-			`{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"4:44"}]}}},` +
-			`{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"Kygo"},{"text":" • "},{"text":"` + length + `"}]}}}]}}`
+			`{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":` + strconv.Quote(title) + `}]}}},` +
+			`{"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"` + artist + `"},{"text":" • "},{"text":` + strconv.Quote(title) + `},{"text":" • "},{"text":"` + length + `"}]}}}]}}`
 	}
 	search := json.RawMessage(`{"contents":{"tabbedSearchResultsRenderer":{"tabs":[{"tabRenderer":{"content":{"sectionListRenderer":{"contents":[{"musicShelfRenderer":{"contents":[` +
-		song("", "3:19") + `,` + song("remix", "4:44") + `,` + song("original", "3:19") + `]}}]}}}}]}}}`)
-	if got := youtubeVideoID(search, Request{Duration: 194 * time.Second}); got != "original" {
+		song("", `Dat New "New"`, "Kid Cudi", "4:15") + `,` +
+		song("cudizone", "Cudi Zone", "Kid Cudi", "4:20") + `,` +
+		song("remix", "Dat new new (Remix)", "DCG", "4:15") + `,` +
+		song("original", `Dat New "New"`, "Kid Cudi", "4:15") + `]}}]}}}}]}}}`)
+	req := Request{Title: `Kid Cudi - Dat New "New" (Dirty)`, Artist: "Fool's Gold Records", Duration: 255 * time.Second}
+	if got := youtubeVideoID(search, req); got != "original" {
 		t.Fatalf("picked %q", got)
 	}
 

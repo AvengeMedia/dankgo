@@ -20,7 +20,8 @@ const (
 	youtubeTabs  = "contents.singleColumnMusicWatchNextResultsRenderer.tabbedRenderer.watchNextTabbedResultsRenderer.tabs.tabRenderer"
 	youtubeRows  = "contents.elementRenderer.newElement.type.componentType.model.timedLyricsModel.lyricsData.timedLyricsData"
 
-	youtubeRuns     = "flexColumns.musicResponsiveListItemFlexColumnRenderer.text.runs.text"
+	youtubeColumns  = "flexColumns.musicResponsiveListItemFlexColumnRenderer"
+	youtubeRuns     = youtubeColumns + ".text.runs.text"
 	youtubeBrowse   = "endpoint.browseEndpoint"
 	youtubePageType = youtubeBrowse + ".browseEndpointContextSupportedConfigs.browseEndpointContextMusicConfig.pageType"
 )
@@ -120,22 +121,34 @@ func (c *Client) youtube(ctx context.Context, endpoint, fields string, body yout
 
 func youtubeVideoID(search json.RawMessage, req Request) string {
 	for _, song := range dig(search, youtubeSongs) {
+		columns := dig(song, youtubeColumns)
+		if len(columns) < 2 {
+			continue
+		}
+		title := strings.Join(digStrings(columns[0], "text.runs.text"), "")
+		details := digStrings(columns[1], "text.runs.text")
 		videoID := digString(song, "playlistItemData.videoId")
-		if videoID != "" && req.matchesDuration(youtubeSeconds(song)) {
+		if videoID != "" && req.matchesDuration(youtubeSeconds(details)) && req.matchesTrack(title, youtubeArtists(details)) {
 			return videoID
 		}
 	}
 	return ""
 }
 
-// The length is the last clock-like run in a row, a title like "4:44" comes first.
-func youtubeSeconds(song json.RawMessage) int {
-	for _, text := range slices.Backward(digStrings(song, youtubeRuns)) {
-		if seconds, ok := clockSeconds(text); ok {
-			return seconds
-		}
+// A song's details read "Kygo", " & ", "Zak Abel", " • ", album, " • ", "3:19".
+func youtubeArtists(details []string) []string {
+	if end := slices.Index(details, " • "); end >= 0 {
+		return details[:end]
 	}
-	return 0
+	return details
+}
+
+func youtubeSeconds(details []string) int {
+	if len(details) == 0 {
+		return 0
+	}
+	seconds, _ := clockSeconds(details[len(details)-1])
+	return seconds
 }
 
 func youtubeLyricsID(next json.RawMessage) string {

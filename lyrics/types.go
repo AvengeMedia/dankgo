@@ -3,6 +3,7 @@ package lyrics
 import (
 	"math"
 	"net/url"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -166,10 +167,39 @@ func (r Request) seconds() int {
 
 const durationSlack = 8
 
+var bracketed = regexp.MustCompile(`[(\[（【][^)\]）】]*[)\]）】]`)
+
 // matchesDuration allows for catalogs that time the same recording a few seconds apart.
 func (r Request) matchesDuration(seconds int) bool {
 	want := r.seconds()
 	return want == 0 || max(want-seconds, seconds-want) <= durationSlack
+}
+
+// Provider searches pad their results with other songs by the artist and other people's uploads.
+func (r Request) matchesTrack(title string, artists []string) bool {
+	name := searchable(title)
+	if name == "" || !containsWords(searchable(r.Title), name) {
+		return false
+	}
+	known := searchable(r.Artist + " " + r.Title)
+	for _, artist := range artists {
+		if artist := searchable(artist); artist != "" && containsWords(known, artist) {
+			return true
+		}
+	}
+	return false
+}
+
+// searchable drops notes like "(Radio Edit)", quotes and punctuation.
+func searchable(text string) string {
+	text = bracketed.ReplaceAllString(strings.ToLower(text), " ")
+	return strings.Join(strings.FieldsFunc(text, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
+	}), " ")
+}
+
+func containsWords(text, words string) bool {
+	return strings.Contains(" "+text+" ", " "+words+" ")
 }
 
 func (r Request) query(title, artist, album, duration string) url.Values {

@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 )
 
 const (
@@ -27,8 +26,6 @@ var (
 	krcKey  = []byte{64, 71, 97, 119, 94, 50, 116, 71, 81, 54, 49, 45, 206, 210, 110, 105}
 	krcLine = regexp.MustCompile(`^\[(\d+),(\d+)\](.*)`)
 	krcWord = regexp.MustCompile(`<(\d+),(\d+),\d+>([^<]*)`)
-
-	bracketed = regexp.MustCompile(`[(\[（【][^)\]）】]*[)\]）】]`)
 )
 
 type kugouSong struct {
@@ -103,31 +100,8 @@ func (c *Client) kugouSearch(ctx context.Context, req Request, query url.Values)
 	return kugouCandidate{}, errNotFound
 }
 
-// kugou's search pads results with other songs by the artist, and a song's lyrics can be someone else's upload.
 func kugouMatches(req Request, title, singers string) bool {
-	name := searchable(title)
-	if name == "" || !containsWords(searchable(req.Title), name) {
-		return false
-	}
-	known := searchable(req.Artist + " " + req.Title)
-	for _, singer := range strings.Split(singers, "、") {
-		if singer := searchable(singer); singer != "" && containsWords(known, singer) {
-			return true
-		}
-	}
-	return false
-}
-
-// searchable drops notes like "(Radio Edit)", quotes and punctuation.
-func searchable(text string) string {
-	text = bracketed.ReplaceAllString(strings.ToLower(text), " ")
-	return strings.Join(strings.FieldsFunc(text, func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
-	}), " ")
-}
-
-func containsWords(text, words string) bool {
-	return strings.Contains(" "+text+" ", " "+words+" ")
+	return req.matchesTrack(title, strings.Split(singers, "、"))
 }
 
 func (c *Client) kugouDownload(ctx context.Context, candidate kugouCandidate, format string, parse Parser) (*Lyrics, error) {
