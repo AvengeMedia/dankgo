@@ -23,6 +23,7 @@ Every app in the suite was carrying its own copy of the same logger, unix-socket
 | `netutil` | `GetIPAddress` header dance. |
 | `lyrics` | Song lyrics lookup: sidecar files, disk cache, then LRCLIB / BetterLyrics / LyricsPlus raced in priority order. Typed line and word timing, voices, backing vocals. LRC, TTML and Lyricsfile parsers usable on their own. |
 | `app` | Thin bootstrap: `app.New(info, rootCmd)` wires logging + version, `app.Serve(ctx, runners...)` handles signals and shutdown. Not a framework. |
+| `material` | Go port of Google's material-color-utilities: HCT, tonal palettes, the 2021 and 2025 dynamic color specs, Wu/WSMeans/Celebi quantizers. Apache-2.0, see `material/NOTICE`. |
 
 ## Using it
 
