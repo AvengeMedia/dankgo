@@ -18,9 +18,9 @@ func TestTTMLVoicesAndBackingSurviveCache(t *testing.T) {
 <p begin="1" end="5" ttm:agent="a"><span begin="1" end="4">Lead</span><span ttm:role="x-bg"><span begin="2" end="5">Echo</span></span></p>
 <p begin="3" end="6" ttm:agent="b"><span begin="3" end="6">Reply</span><span ttm:role="x-translation">Ignored translation</span></p>
 </div></body></tt>`
-	client.fetch = func(context.Context, Provider, Request) (*Lyrics, error) {
+	stub(client, func(context.Context, Provider, Request) (*Lyrics, error) {
 		return ParseTTML([]byte(document))
-	}
+	})
 	req := Request{Title: "Track", Artist: "Artist", Providers: []Provider{BetterLyrics}}
 	want := []Line{
 		{Start: 1, End: 4, Text: "Lead", Voice: "a", Group: 1, Words: []Word{{Start: 1, End: 4, Text: "Lead"}}},

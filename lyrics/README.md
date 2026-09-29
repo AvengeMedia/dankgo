@@ -123,7 +123,59 @@ All three are a `lyrics.Parser`, which is just `func([]byte) (*Lyrics, error)`. 
 
 A new file format: write a `Parser`, add a row to `sidecarFormats` in `sidecar.go`.
 
-A new provider: add the `Provider` const, write a `fetchX` method on `Client` that returns `*Lyrics`, add a row to `fetchers` in `providers.go`. Caching, rate limiting and the priority race come for free.
+A new built-in provider: add the `Provider` const, write a `fetchX` method on `Client` that returns `*Lyrics`, add a row to `builtins` in `providers.go`. Caching, rate limiting and the priority race come for free.
+
+## Custom providers
+
+A provider is a `Source`: an `Attribution`, a `WordSync` flag and a `Fetch` func. The built-in ones are Sources too. `Options.Resolve` supplies Sources for ids that are not built in. It runs on every `Lookup`, so the set can change while the client lives.
+
+```go
+client := lyrics.New(lyrics.Options{
+    Resolve: func(id lyrics.Provider) (lyrics.Source, bool) {
+        if id != "myprovider" {
+            return lyrics.Source{}, false
+        }
+        return lyrics.Source{
+            Attribution: lyrics.Attribution{Name: "My Provider", URL: "https://example.com"},
+            Fetch:       lyrics.Command("/usr/lib/myprovider/fetch"),
+        }, true
+    },
+})
+
+result, err := client.Lookup(ctx, lyrics.Request{
+    Artist:    "Daft Punk",
+    Title:     "Get Lucky",
+    Providers: []lyrics.Provider{"myprovider", lyrics.LRCLIB},
+})
+```
+
+A custom Source gets the same cache, rate limit and priority race as a built-in one. It only runs when it is in `Providers`, `DefaultProviders()` is built-ins only. Set `WordSync` only when the source usually has word timing, it lets the source hold a line-synced winner for up to 2 seconds.
+
+`Fetch` returns empty `Lyrics` for no lyrics, which is cached for 14 days like any miss. Errors are not cached.
+
+### Command
+
+`lyrics.Command(name, args...)` is a `Fetch` that runs a program per lookup, so a provider can be written in anything. The track comes in on stdin. `album` and `duration` are left out when unknown:
+
+```json
+{ "title": "Get Lucky", "artist": "Daft Punk", "album": "Random Access Memories", "duration": 369 }
+```
+
+The answer goes to stdout:
+
+```json
+{ "format": "ttml", "lyrics": "<tt xmlns=\"http://www.w3.org/ns/ttml\">...</tt>" }
+```
+
+`format` is `lrc`, `ttml` or `lyricsfile`, read with the parsers above. Plain text goes as `lrc`. `{"instrumental": true}` is an instrumental. No output is no lyrics, a non-zero exit is an error. stderr is dropped.
+
+Output over 512 KiB is `ErrTooLarge`. After 8 seconds, or once the lookup has a winner, the command is killed along with everything it started.
+
+Try one by hand:
+
+```
+echo '{"title":"Get Lucky","artist":"Daft Punk"}' | ./fetch
+```
 
 ## JSON
 

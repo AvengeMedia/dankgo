@@ -19,12 +19,21 @@ func isolate(t *testing.T) *Client {
 	return client
 }
 
+func stub(client *Client, fetch func(context.Context, Provider, Request) (*Lyrics, error)) {
+	for provider, source := range client.sources {
+		source.Fetch = func(ctx context.Context, req Request) (*Lyrics, error) {
+			return fetch(ctx, provider, req)
+		}
+		client.sources[provider] = source
+	}
+}
+
 func denyNetwork(t *testing.T, client *Client) {
 	t.Helper()
-	client.fetch = func(context.Context, Provider, Request) (*Lyrics, error) {
+	stub(client, func(context.Context, Provider, Request) (*Lyrics, error) {
 		t.Error("lyrics lookup reached the network")
 		return nil, errNotFound
-	}
+	})
 }
 
 func TestLookupCacheOnlyNeverFetches(t *testing.T) {
@@ -65,10 +74,10 @@ func TestLookupCachesMissAndDoesNotRefetch(t *testing.T) {
 	client := isolate(t)
 
 	calls := 0
-	client.fetch = func(context.Context, Provider, Request) (*Lyrics, error) {
+	stub(client, func(context.Context, Provider, Request) (*Lyrics, error) {
 		calls++
 		return nil, errNotFound
-	}
+	})
 
 	req := Request{Artist: "Nobody", Title: "Unknown Song", Providers: []Provider{LRCLIB}}
 	for range 2 {
@@ -85,10 +94,10 @@ func TestUncachedByProviderIsNotStoredAsMiss(t *testing.T) {
 	client := isolate(t)
 
 	calls := 0
-	client.fetch = func(context.Context, Provider, Request) (*Lyrics, error) {
+	stub(client, func(context.Context, Provider, Request) (*Lyrics, error) {
 		calls++
 		return nil, classifyStatus(http.StatusUnauthorized)
-	}
+	})
 
 	req := Request{Artist: "Cynthia Harrell", Title: "Snake Eater", Providers: []Provider{BetterLyrics}}
 	for range 2 {
@@ -129,13 +138,13 @@ func TestStaleLineSyncedEntryUpgradesToWordSync(t *testing.T) {
 			Lyrics:  Lyrics{Synced: []Line{{Text: "cached"}}},
 		})
 		calls := 0
-		client.fetch = func(context.Context, Provider, Request) (*Lyrics, error) {
+		stub(client, func(context.Context, Provider, Request) (*Lyrics, error) {
 			calls++
 			if !upgraded {
 				return &Lyrics{Synced: []Line{{Text: "refetched"}}}, nil
 			}
 			return &Lyrics{Synced: []Line{{Text: "refetched", Words: []Word{{Text: "refetched"}}}}}, nil
-		}
+		})
 		var result *Result
 		for range 2 {
 			var err error
@@ -179,13 +188,13 @@ func writeEntry(t *testing.T, client *Client, key string, entry cacheEntry) {
 func TestLookupSeparatesDuration(t *testing.T) {
 	client := isolate(t)
 	calls := 0
-	client.fetch = func(_ context.Context, _ Provider, req Request) (*Lyrics, error) {
+	stub(client, func(_ context.Context, _ Provider, req Request) (*Lyrics, error) {
 		calls++
 		if req.Duration == 180*time.Second {
 			return nil, errNotFound
 		}
 		return &Lyrics{Plain: "long recording"}, nil
-	}
+	})
 	req := Request{Artist: "Artist", Title: "Track", Album: "Album", Duration: 180 * time.Second, Providers: []Provider{LRCLIB}}
 	if _, err := client.Lookup(context.Background(), req); err != nil {
 		t.Fatal(err)
@@ -202,11 +211,11 @@ func TestLookupCoalescesBeforeRateLimit(t *testing.T) {
 	client.rateBuckets[LRCLIB] = &rateBucket{tokens: 1, last: time.Now()}
 	started := make(chan struct{})
 	release := make(chan struct{})
-	client.fetch = func(context.Context, Provider, Request) (*Lyrics, error) {
+	stub(client, func(context.Context, Provider, Request) (*Lyrics, error) {
 		close(started)
 		<-release
 		return &Lyrics{Plain: "line"}, nil
-	}
+	})
 	req := Request{Artist: "Artist", Title: "Track", Providers: []Provider{LRCLIB}}
 	results := make(chan error, rateBurst+1)
 	go func() {

@@ -35,9 +35,9 @@ plain: |
 func TestLyricsfileLookupPreservesWordsThroughCache(t *testing.T) {
 	client := isolate(t)
 	payload := lrclibResponse{Lyricsfile: wordLyricsfile, SyncedLyrics: "[00:01.20]Legacy line"}
-	client.fetch = func(context.Context, Provider, Request) (*Lyrics, error) {
+	stub(client, func(context.Context, Provider, Request) (*Lyrics, error) {
 		return decodeLrclib(payload)
-	}
+	})
 	req := Request{Artist: "Fixture", Title: "Fixture", Providers: []Provider{LRCLIB}}
 	writeEntry(t, client, cacheKey(req), cacheEntry{Version: cacheVersion - 1, Fetched: time.Now().Unix(), Lyrics: Lyrics{Plain: "old line-only result"}})
 	for i := 0; i < 2; i++ {

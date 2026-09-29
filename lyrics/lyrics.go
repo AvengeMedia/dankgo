@@ -33,6 +33,8 @@ type Options struct {
 	UserAgent string
 	// DisableUpgrade stops cached line-synced lyrics from being re-requested for word sync.
 	DisableUpgrade bool
+	// Resolve supplies Sources for providers that are not built in. Built-ins win a clash.
+	Resolve func(Provider) (Source, bool)
 }
 
 // Client is safe for concurrent use. Rate limits and request dedup are per Client, so share one.
@@ -42,7 +44,8 @@ type Client struct {
 	upgrade   bool
 	wordGrace time.Duration
 	http      *http.Client
-	fetch     func(context.Context, Provider, Request) (*Lyrics, error)
+	sources   map[Provider]Source
+	resolve   func(Provider) (Source, bool)
 	lookups   singleflight.Group
 
 	rateMu      sync.Mutex
@@ -56,9 +59,10 @@ func New(opts Options) *Client {
 		upgrade:     !opts.DisableUpgrade,
 		wordGrace:   wordGrace,
 		http:        newHTTPClient(),
+		resolve:     opts.Resolve,
 		rateBuckets: map[Provider]*rateBucket{},
 	}
-	client.fetch = client.fetchProvider
+	client.sources = client.builtins()
 	if client.userAgent == "" {
 		client.userAgent = defaultUserAgent
 	}
@@ -86,17 +90,18 @@ func (c *Client) Lookup(ctx context.Context, req Request) (*Result, error) {
 		providers = DefaultProviders()
 	}
 	seen := make(map[Provider]bool, len(providers))
-	ordered := make([]Provider, 0, len(providers))
+	ordered := make([]namedSource, 0, len(providers))
 	names := make([]string, 0, len(providers))
 	for _, provider := range providers {
 		if seen[provider] {
 			continue
 		}
-		if _, known := fetchers[provider]; !known {
+		source, known := c.source(provider)
+		if !known {
 			return nil, fmt.Errorf("unknown lyrics provider: %s", provider)
 		}
 		seen[provider] = true
-		ordered = append(ordered, provider)
+		ordered = append(ordered, namedSource{id: provider, Source: source})
 		names = append(names, string(provider))
 	}
 	if len(ordered) == 0 {
@@ -117,6 +122,11 @@ func (c *Client) Lookup(ctx context.Context, req Request) (*Result, error) {
 	}
 }
 
+type namedSource struct {
+	id Provider
+	Source
+}
+
 type providerResponse struct {
 	index  int
 	result *Result
@@ -130,7 +140,7 @@ type providerResponse struct {
 // Word sync outranks priority: a word-synced result wins once every wordProvider ahead
 // of it has finished, and a lesser winner is held up to wordGrace for the wordProviders
 // still out.
-func (c *Client) lookupProviders(ctx context.Context, providers []Provider, req Request) (*Result, error) {
+func (c *Client) lookupProviders(ctx context.Context, providers []namedSource, req Request) (*Result, error) {
 	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
 	replies := make(chan providerResponse, len(providers))
@@ -200,9 +210,9 @@ func (c *Client) lookupProviders(ctx context.Context, providers []Provider, req 
 }
 
 // wordWinner is the first word-synced result with no wordProvider still out ahead of it.
-func wordWinner(providers []Provider, finished []bool, results []providerResponse) *Result {
+func wordWinner(providers []namedSource, finished []bool, results []providerResponse) *Result {
 	for index, provider := range providers {
-		if !finished[index] && wordProviders[provider] {
+		if !finished[index] && provider.WordSync {
 			return nil
 		}
 		if result := results[index].result; result != nil && result.Found && result.wordSynced() {
@@ -212,9 +222,9 @@ func wordWinner(providers []Provider, finished []bool, results []providerRespons
 	return nil
 }
 
-func wordPending(providers []Provider, finished []bool) bool {
+func wordPending(providers []namedSource, finished []bool) bool {
 	for index, provider := range providers {
-		if !finished[index] && wordProviders[provider] {
+		if !finished[index] && provider.WordSync {
 			return true
 		}
 	}
@@ -238,13 +248,13 @@ func bestFound(responses []providerResponse) *Result {
 	return best
 }
 
-func (c *Client) lookupProvider(ctx context.Context, provider Provider, req Request) (*Result, error) {
-	key := providerCacheKey(provider, req)
+func (c *Client) lookupProvider(ctx context.Context, provider namedSource, req Request) (*Result, error) {
+	key := providerCacheKey(provider.id, req)
 	if entry, ok := c.loadCache(key); ok {
 		if c.upgrade && !req.CacheOnly && entry.awaitsWordSync() {
 			c.upgradeCache(ctx, key, provider, req, entry)
 		}
-		return fromCache(entry), nil
+		return fromCache(entry, provider.Attribution), nil
 	}
 	if req.CacheOnly {
 		return &Result{}, nil
@@ -252,10 +262,10 @@ func (c *Client) lookupProvider(ctx context.Context, provider Provider, req Requ
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if !c.allowRequest(provider) {
+	if !c.allowRequest(provider.id) {
 		return nil, ErrRateLimited
 	}
-	found, err := c.fetch(ctx, provider, req)
+	found, err := provider.Fetch(ctx, req)
 	if errors.Is(err, errUncached) {
 		return &Result{}, nil
 	}
@@ -266,17 +276,17 @@ func (c *Client) lookupProvider(ctx context.Context, provider Provider, req Requ
 		c.storeCache(key, &cacheEntry{Miss: true})
 		return &Result{}, nil
 	}
-	c.storeCache(key, &cacheEntry{Source: provider, Lyrics: *found})
-	return &Result{Found: true, Source: provider, Attribution: provider.Attribution(), Lyrics: *found}, nil
+	c.storeCache(key, &cacheEntry{Source: provider.id, Lyrics: *found})
+	return &Result{Found: true, Source: provider.id, Attribution: provider.Attribution, Lyrics: *found}, nil
 }
 
 // upgradeCache swaps a line-synced entry for word sync once the provider has it.
 // The entry is restamped either way, so the provider is asked once per upgradeTTL.
-func (c *Client) upgradeCache(ctx context.Context, key string, provider Provider, req Request, entry *cacheEntry) {
-	if !c.allowRequest(provider) {
+func (c *Client) upgradeCache(ctx context.Context, key string, provider namedSource, req Request, entry *cacheEntry) {
+	if !c.allowRequest(provider.id) {
 		return
 	}
-	found, err := c.fetch(ctx, provider, req)
+	found, err := provider.Fetch(ctx, req)
 	if err != nil && !errors.Is(err, errNotFound) {
 		return
 	}
@@ -286,11 +296,11 @@ func (c *Client) upgradeCache(ctx context.Context, key string, provider Provider
 	c.storeCache(key, entry)
 }
 
-func fromCache(entry *cacheEntry) *Result {
+func fromCache(entry *cacheEntry, attribution Attribution) *Result {
 	if entry.Miss {
 		return &Result{Cached: true}
 	}
-	return &Result{Found: true, Source: entry.Source, Cached: true, Attribution: entry.Source.Attribution(), Lyrics: entry.Lyrics}
+	return &Result{Found: true, Source: entry.Source, Cached: true, Attribution: attribution, Lyrics: entry.Lyrics}
 }
 
 func (c *Client) allowRequest(provider Provider) bool {

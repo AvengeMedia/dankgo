@@ -19,7 +19,7 @@ func TestConcurrentProviderPriorityAndCancellation(t *testing.T) {
 			lowerReady := make(chan struct{})
 			lastStarted := make(chan struct{})
 			lastCanceled := make(chan struct{})
-			client.fetch = func(ctx context.Context, provider Provider, _ Request) (*Lyrics, error) {
+			stub(client, func(ctx context.Context, provider Provider, _ Request) (*Lyrics, error) {
 				switch provider {
 				case "betterlyrics":
 					<-releaseHigh
@@ -36,7 +36,7 @@ func TestConcurrentProviderPriorityAndCancellation(t *testing.T) {
 					close(lastCanceled)
 					return nil, ctx.Err()
 				}
-			}
+			})
 			response := make(chan providerResponse, 1)
 			go func() {
 				result, err := client.Lookup(context.Background(), Request{Artist: "Artist", Title: "Track", Providers: []Provider{BetterLyrics, LRCLIB, LyricsPlus}})
@@ -71,14 +71,14 @@ func TestWordSyncOutranksPriority(t *testing.T) {
 	client := isolate(t)
 	client.wordGrace = time.Minute
 	lineReady := make(chan struct{})
-	client.fetch = func(_ context.Context, provider Provider, _ Request) (*Lyrics, error) {
+	stub(client, func(_ context.Context, provider Provider, _ Request) (*Lyrics, error) {
 		if provider == LRCLIB {
 			close(lineReady)
 			return &Lyrics{Synced: []Line{{Text: "line synced"}}}, nil
 		}
 		<-lineReady
 		return &Lyrics{Synced: []Line{{Text: "word synced", Words: []Word{{Text: "word synced"}}}}}, nil
-	}
+	})
 	result, err := client.Lookup(context.Background(), Request{Artist: "Artist", Title: "Track", Providers: []Provider{LRCLIB, LyricsPlus}})
 	if err != nil || result.Source != LyricsPlus {
 		t.Fatalf("result=%+v err=%v", result, err)
@@ -89,7 +89,7 @@ func TestProviderCacheAndDisabledProviders(t *testing.T) {
 	client := isolate(t)
 	calls := map[Provider]int{}
 	var mu sync.Mutex
-	client.fetch = func(_ context.Context, provider Provider, _ Request) (*Lyrics, error) {
+	stub(client, func(_ context.Context, provider Provider, _ Request) (*Lyrics, error) {
 		mu.Lock()
 		calls[provider]++
 		mu.Unlock()
@@ -97,7 +97,7 @@ func TestProviderCacheAndDisabledProviders(t *testing.T) {
 			return nil, errNotFound
 		}
 		return &Lyrics{Plain: "cached line"}, nil
-	}
+	})
 	req := Request{Artist: "Artist", Title: "Track", Providers: []Provider{BetterLyrics, LyricsPlus}}
 	for range 2 {
 		result, err := client.Lookup(context.Background(), req)
@@ -121,12 +121,12 @@ func TestProviderCacheAndDisabledProviders(t *testing.T) {
 
 func TestProviderFailureFallsBack(t *testing.T) {
 	client := isolate(t)
-	client.fetch = func(_ context.Context, provider Provider, _ Request) (*Lyrics, error) {
+	stub(client, func(_ context.Context, provider Provider, _ Request) (*Lyrics, error) {
 		if provider == "betterlyrics" {
 			return nil, errors.New("provider unavailable")
 		}
 		return &Lyrics{Plain: "usable lyrics"}, nil
-	}
+	})
 	result, err := client.Lookup(context.Background(), Request{Artist: "Artist", Title: "Track", Providers: []Provider{BetterLyrics, LyricsPlus}})
 	if err != nil || !result.Found || result.Plain != "usable lyrics" {
 		t.Fatalf("fallback=%+v err=%v", result, err)
@@ -136,10 +136,10 @@ func TestProviderFailureFallsBack(t *testing.T) {
 func TestProviderErrorsAreNotCached(t *testing.T) {
 	client := isolate(t)
 	calls := 0
-	client.fetch = func(context.Context, Provider, Request) (*Lyrics, error) {
+	stub(client, func(context.Context, Provider, Request) (*Lyrics, error) {
 		calls++
 		return nil, &StatusError{Code: http.StatusServiceUnavailable}
-	}
+	})
 	req := Request{Artist: "Artist", Title: "Track", Providers: []Provider{BetterLyrics}}
 	for range 2 {
 		if _, err := client.Lookup(context.Background(), req); err == nil {
@@ -214,12 +214,12 @@ func TestProviderMissStatusesAreNotErrors(t *testing.T) {
 
 func TestDefiniteMissOutranksProviderFailure(t *testing.T) {
 	client := isolate(t)
-	client.fetch = func(_ context.Context, provider Provider, _ Request) (*Lyrics, error) {
+	stub(client, func(_ context.Context, provider Provider, _ Request) (*Lyrics, error) {
 		if provider == "betterlyrics" {
 			return nil, &StatusError{Code: http.StatusTooManyRequests}
 		}
 		return &Lyrics{}, nil
-	}
+	})
 	result, err := client.Lookup(context.Background(), Request{
 		Artist: "Artist", Title: "Track",
 		Providers: []Provider{BetterLyrics, LRCLIB},
@@ -231,9 +231,9 @@ func TestDefiniteMissOutranksProviderFailure(t *testing.T) {
 
 func TestEveryProviderFailingStaysAnError(t *testing.T) {
 	client := isolate(t)
-	client.fetch = func(context.Context, Provider, Request) (*Lyrics, error) {
+	stub(client, func(context.Context, Provider, Request) (*Lyrics, error) {
 		return nil, &StatusError{Code: http.StatusTooManyRequests}
-	}
+	})
 	if _, err := client.Lookup(context.Background(), Request{
 		Artist: "Artist", Title: "Track",
 		Providers: []Provider{BetterLyrics, LRCLIB},
@@ -246,12 +246,12 @@ func TestNilProvidersUseDefaults(t *testing.T) {
 	client := isolate(t)
 	var mu sync.Mutex
 	var asked []Provider
-	client.fetch = func(_ context.Context, provider Provider, _ Request) (*Lyrics, error) {
+	stub(client, func(_ context.Context, provider Provider, _ Request) (*Lyrics, error) {
 		mu.Lock()
 		asked = append(asked, provider)
 		mu.Unlock()
 		return nil, errNotFound
-	}
+	})
 	if _, err := client.Lookup(context.Background(), Request{Artist: "Artist", Title: "Track"}); err != nil {
 		t.Fatal(err)
 	}

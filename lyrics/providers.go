@@ -29,26 +29,59 @@ func (e *StatusError) Error() string {
 	return fmt.Sprintf("HTTP %d", e.Code)
 }
 
-// A new provider is a fetch method plus a row here.
-var fetchers = map[Provider]func(*Client, context.Context, Request) (*Lyrics, error){
-	LRCLIB:       (*Client).fetchLrclib,
-	BetterLyrics: (*Client).fetchBetterLyrics,
-	LyricsPlus:   (*Client).fetchLyricsPlus,
-	Unison:       (*Client).fetchUnison,
-	KuGou:        (*Client).fetchKuGou,
-	YouTubeMusic: (*Client).fetchYouTubeMusic,
+// Fetcher looks up one track. Empty Lyrics is a miss and gets cached, an error does not.
+type Fetcher func(ctx context.Context, req Request) (*Lyrics, error)
+
+// Source is one provider. The built-in providers are Sources too.
+type Source struct {
+	Attribution Attribution
+	// WordSync marks a source worth holding a line-synced winner for.
+	WordSync bool
+	Fetch    Fetcher
 }
 
-// wordProviders are worth holding a line-synced winner for. lrclib has word sync too rarely.
-var wordProviders = map[Provider]bool{
-	BetterLyrics: true,
-	Unison:       true,
-	LyricsPlus:   true,
-	KuGou:        true,
+// A new built-in is a fetch method plus a row here. lrclib has word sync too rarely.
+func (c *Client) builtins() map[Provider]Source {
+	return map[Provider]Source{
+		BetterLyrics: {
+			Attribution: Attribution{Name: "Better Lyrics", URL: "https://betterlyrics.org"},
+			WordSync:    true,
+			Fetch:       c.fetchBetterLyrics,
+		},
+		Unison: {
+			Attribution: Attribution{Name: "Unison", URL: "https://unison.boidu.dev", Text: "Lyrics from Unison (https://unison.boidu.dev)"},
+			WordSync:    true,
+			Fetch:       c.fetchUnison,
+		},
+		LyricsPlus: {
+			Attribution: Attribution{Name: "LyricsPlus", URL: "https://github.com/ibratabian17/lyricsplus"},
+			WordSync:    true,
+			Fetch:       c.fetchLyricsPlus,
+		},
+		KuGou: {
+			Attribution: Attribution{Name: "KuGou", URL: "https://www.kugou.com"},
+			WordSync:    true,
+			Fetch:       c.fetchKuGou,
+		},
+		LRCLIB: {
+			Attribution: Attribution{Name: "LRCLIB", URL: "https://lrclib.net"},
+			Fetch:       c.fetchLrclib,
+		},
+		YouTubeMusic: {
+			Attribution: Attribution{Name: "YouTube Music", URL: "https://music.youtube.com"},
+			Fetch:       c.fetchYouTubeMusic,
+		},
+	}
 }
 
-func (c *Client) fetchProvider(ctx context.Context, provider Provider, req Request) (*Lyrics, error) {
-	return fetchers[provider](c, ctx, req)
+func (c *Client) source(provider Provider) (Source, bool) {
+	if source, ok := c.sources[provider]; ok {
+		return source, true
+	}
+	if c.resolve == nil {
+		return Source{}, false
+	}
+	return c.resolve(provider)
 }
 
 func newHTTPClient() *http.Client {

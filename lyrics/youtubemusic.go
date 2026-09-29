@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const (
@@ -58,7 +59,7 @@ type youtubeCue struct {
 }
 
 func (c *Client) fetchYouTubeMusic(ctx context.Context, req Request) (*Lyrics, error) {
-	web := youtubeContext{Client: youtubeClient{Name: "WEB_REMIX", Version: "1." + time.Now().UTC().Format("20060102") + ".01.00", Language: "en"}}
+	web := youtubeContext{Client: youtubeClient{Name: "WEB_REMIX", Version: "1." + time.Now().UTC().Format("20060102") + ".01.00", Language: youtubeLanguage(req)}}
 
 	search, err := c.youtube(ctx, "search", youtubeSongs+"(playlistItemData.videoId,"+youtubeRuns+")",
 		youtubeRequest{Context: web, Query: req.Title + " " + req.Artist, Params: youtubeSongsOnly})
@@ -133,6 +134,19 @@ func youtubeVideoID(search json.RawMessage, req Request) string {
 		}
 	}
 	return ""
+}
+
+// Search localizes names: with hl=en 米津玄師 comes back as "Kenshi Yonezu" and 아이유 as "IU".
+func youtubeLanguage(req Request) string {
+	for _, r := range req.Artist + req.Title {
+		switch {
+		case unicode.Is(unicode.Hangul, r):
+			return "ko"
+		case unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana):
+			return "ja"
+		}
+	}
+	return "en"
 }
 
 // A song's details read "Kygo", " & ", "Zak Abel", " • ", album, " • ", "3:19".
