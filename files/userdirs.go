@@ -74,11 +74,11 @@ func loadUserDirPaths() map[string]string {
 
 func loadUserDirs() map[string]string {
 	dirs := map[string]string{}
-	if home, err := os.UserHomeDir(); err == nil {
-		dirs[home] = "user-home"
-	}
 	for key, path := range loadUserDirPaths() {
 		dirs[path] = userDirIcons[key]
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		dirs[home] = "user-home"
 	}
 	return dirs
 }
@@ -91,14 +91,17 @@ func listUserDirs() []UserDir {
 	paths := loadUserDirPaths()
 
 	out := make([]UserDir, 0, len(userDirOrder)+1)
+	seen := map[string]bool{}
 	if home, err := os.UserHomeDir(); err == nil {
 		out = append(out, UserDir{Key: "home", Name: filepath.Base(home), Path: home, IconName: "user-home"})
+		seen[home] = true
 	}
 	for _, envKey := range userDirOrder {
 		path, ok := paths[envKey]
-		if !ok {
+		if !ok || seen[path] {
 			continue
 		}
+		seen[path] = true
 		info, err := os.Stat(path)
 		if err != nil || !info.IsDir() {
 			continue
