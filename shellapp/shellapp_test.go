@@ -1,15 +1,18 @@
 package shellapp
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/AvengeMedia/dankgo/ipc"
 	"github.com/stretchr/testify/assert"
@@ -192,6 +195,24 @@ func TestBuildUICommandEnv(t *testing.T) {
 	assert.Contains(t, env, "DANKTEST_START_HIDDEN=1")
 	assert.Contains(t, env, "QT_QPA_PLATFORM=wayland;xcb")
 	assert.Contains(t, env, "DANKTEST_LOG_LEVEL=debug")
+}
+
+func TestUICommandWaitOutlivesForkedChildren(t *testing.T) {
+	a := testApp(t)
+	cmd := a.buildUICommand(context.Background(), "/run/danktest-1.sock")
+
+	sh, err := exec.LookPath("sh")
+	require.NoError(t, err)
+	cmd.Path, cmd.Args, cmd.Err = sh, []string{"sh", "-c", "sleep 30 & exit 0"}, nil
+	cmd.Stderr = &bytes.Buffer{}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	require.NoError(t, cmd.Start())
+	t.Cleanup(func() { _ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) })
+
+	start := time.Now()
+	_ = cmd.Wait()
+	assert.Less(t, time.Since(start), 10*time.Second)
 }
 
 func TestCallUI(t *testing.T) {
