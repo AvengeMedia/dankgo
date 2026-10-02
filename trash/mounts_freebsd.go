@@ -19,7 +19,7 @@ func readMountPoints() []string {
 	seen := map[string]bool{}
 	for _, st := range stats[:n] {
 		mp := unix.ByteSliceToString(st.Mntonname[:])
-		if mp == "" || skipMountPoint(mp, seen) {
+		if mp == "" || skipMountPoint(mp, seen) || skipFsType(unix.ByteSliceToString(st.Fstypename[:])) {
 			continue
 		}
 		seen[mp] = true

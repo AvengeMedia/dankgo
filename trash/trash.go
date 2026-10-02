@@ -279,6 +279,11 @@ func allTrashDirs() []string {
 	return dirs
 }
 
+// Touching anything under an autofs placeholder mounts the volume behind it.
+func skipFsType(fsType string) bool {
+	return fsType == "autofs"
+}
+
 func skipMountPoint(mp string, seen map[string]bool) bool {
 	if mp == "/" || seen[mp] {
 		return true
