@@ -84,6 +84,9 @@ func decodeLyricsPlus(payload lyricsPlusResponse) (*Lyrics, error) {
 	if len(result.Synced) > MaxLines {
 		return nil, ErrTooLarge
 	}
+	if len(result.Synced) > 0 && !result.timed() {
+		return nil, errUntimedSync
+	}
 	sortLines(result.Synced)
 	result.Plain = strings.Join(plain, "\n")
 	return result, nil

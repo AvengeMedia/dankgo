@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	cacheVersion  = 3
+	cacheVersion  = 4
 	negativeTTL   = 14 * 24 * time.Hour
 	upgradeTTL    = 14 * 24 * time.Hour
 	entryMaxAge   = 90 * 24 * time.Hour

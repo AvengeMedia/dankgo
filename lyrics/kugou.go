@@ -201,6 +201,7 @@ func krcSpan(offset, length string) (Seconds, Seconds, bool) {
 }
 
 // tidyKuGou drops the "title - artist" line and "role：name" credits KuGou puts before the lyrics.
+// Either may be missing.
 func tidyKuGou(parsed *Lyrics) *Lyrics {
 	lines := parsed.Synced
 	if len(lines) == 0 {
@@ -210,8 +211,8 @@ func tidyKuGou(parsed *Lyrics) *Lyrics {
 		return &Lyrics{Instrumental: true}
 	}
 	credits := 0
-	for i := 1; i < len(lines) && strings.ContainsAny(lines[i].Text, ":："); i++ {
-		credits = i + 1
+	for credits < len(lines) && kugouHeaderLine(lines[credits].Text, credits == 0) {
+		credits++
 	}
 	lyrics := lines[credits:]
 	plain := make([]string, len(lyrics))
@@ -219,4 +220,11 @@ func tidyKuGou(parsed *Lyrics) *Lyrics {
 		plain[i] = line.Text
 	}
 	return &Lyrics{Synced: lyrics, Plain: strings.Join(plain, "\n")}
+}
+
+func kugouHeaderLine(text string, first bool) bool {
+	if strings.ContainsAny(text, ":：") {
+		return true
+	}
+	return first && strings.Contains(text, " - ")
 }

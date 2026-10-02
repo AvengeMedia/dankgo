@@ -18,6 +18,8 @@ const defaultUserAgent = "dankgo-lyrics (+https://github.com/AvengeMedia/dankgo)
 var (
 	errNotFound = errors.New("lyrics not found")
 	errUncached = fmt.Errorf("%w: not cached by provider", errNotFound)
+	// Sync claimed but every stamp is zero, LyricsPlus does this for some Apple tracks.
+	errUntimedSync = fmt.Errorf("%w: synced lyrics without timing", errNotFound)
 )
 
 // StatusError is a non-2xx provider response that is not a plain "no such track".

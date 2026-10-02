@@ -200,6 +200,18 @@ func TestLyricsPlusBoundsIncludeUntimedFallbacks(t *testing.T) {
 
 // betterlyrics answers 401 for a track it has not cached, so a status-only miss
 // must not surface as an error, and must not mask another provider's real answer.
+func TestLyricsPlusAllZeroTimingIsAMiss(t *testing.T) {
+	zero, later := int64(0), int64(3725)
+	payload := lyricsPlusResponse{Type: "Word", Lyrics: []lyricsPlusLine{{Time: &zero, Text: "A crumbling Georgian folly"}, {Time: &zero, Text: "Fantastic shapes absurd"}}}
+	if _, err := decodeLyricsPlus(payload); !errors.Is(err, errNotFound) {
+		t.Fatalf("err=%v", err)
+	}
+	payload.Lyrics[1].Time = &later
+	if result, err := decodeLyricsPlus(payload); err != nil || len(result.Synced) != 2 {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
 func TestProviderMissStatusesAreNotErrors(t *testing.T) {
 	for status, wantMiss := range map[int]bool{
 		http.StatusNotFound: true, http.StatusUnauthorized: true, http.StatusForbidden: true,

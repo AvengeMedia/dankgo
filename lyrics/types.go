@@ -139,6 +139,12 @@ func trimWords(words []Word) []Word {
 	return words
 }
 
+func (l *Lyrics) timed() bool {
+	return slices.ContainsFunc(l.Synced, func(line Line) bool {
+		return line.Start > 0 || line.End > 0 || slices.ContainsFunc(line.Words, func(word Word) bool { return word.Start > 0 || word.End > 0 })
+	})
+}
+
 func (l *Lyrics) wordSynced() bool {
 	return slices.ContainsFunc(l.Synced, func(line Line) bool { return len(line.Words) > 0 })
 }

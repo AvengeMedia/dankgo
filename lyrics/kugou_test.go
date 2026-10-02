@@ -40,21 +40,19 @@ func TestKuGouKRC(t *testing.T) {
 	}
 }
 
-func TestKuGouMatchesTheRequestedTrack(t *testing.T) {
-	levels := Request{Title: "AVICII - LEVELS (RETROVISION FLIP)", Artist: "RetroVision"}
-	hideAway := Request{Title: `"Hide away" (VACEUS Techno remix)`, Artist: "VACEUS"}
-	for _, test := range []struct {
-		req            Request
-		title, singers string
-		want           bool
-	}{
-		{levels, "Heroes", "RetroVision", false},
-		{hideAway, "Hide Away", "DJ文宝", false},
-		{hideAway, "Hide Away", "VACEUS、Jason Wats", true},
-		{Request{Title: "Get Lucky", Artist: "Daft Punk"}, "Get Lucky (Radio Edit)", "Daft Punk、Pharrell Williams", true},
+func TestKuGouHeaderShapes(t *testing.T) {
+	for _, header := range []string{
+		"",
+		"[0,80]<0,80,0>作曲 : glass beach\n",
+		"[0,34540]<0,34540,0>Smells Like Teen Spirit - Nirvana (涅槃)\n",
+		"[0,1370]<0,1370,0>Anti-Hero - Taylor Swift\n[1370,1370]<0,1370,0>Lyrics by：Jack Antonoff\n",
 	} {
-		if got := kugouMatches(test.req, test.title, test.singers); got != test.want {
-			t.Errorf("%q by %q for %+v = %t", test.title, test.singers, test.req, got)
+		parsed, err := decodeKRC(encodeKRC(t, header+"[5000,1000]<0,1000,0>Na na na\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := tidyKuGou(parsed); got.Plain != "Na na na" {
+			t.Errorf("%q: %+v", header, got.Synced)
 		}
 	}
 }

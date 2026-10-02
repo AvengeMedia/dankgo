@@ -67,6 +67,8 @@ That's the whole search, there is no library scan. A local file beats everything
 
 Word sync outranks priority. A word-synced result wins as soon as every word-capable provider ahead of it has finished. When the priority winner is only line-synced or plain and a word-capable provider is still out, it is held for up to 2 seconds in case word sync shows up. LRCLIB is never waited on for this, it has word sync too rarely.
 
+A synced result whose every stamp is zero counts as a miss. LyricsPlus returns those for some Apple tracks, and the next provider usually has real timing.
+
 | Provider       | Format                    | Sync                                  |
 | -------------- | ------------------------- | ------------------------------------- |
 | `BetterLyrics` | TTML                      | word, voices, backing vocals          |
