@@ -3,6 +3,8 @@ package lyrics
 import (
 	"errors"
 	"io"
+	"math"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -13,21 +15,25 @@ var errLyricsfile = errors.New("invalid Lyricsfile document")
 type lyricsfileDocument struct {
 	Version  string `yaml:"version"`
 	Metadata struct {
-		Instrumental bool `yaml:"instrumental"`
+		Title        string `yaml:"title"`
+		Artist       string `yaml:"artist"`
+		Album        string `yaml:"album,omitempty"`
+		DurationMS   int64  `yaml:"duration_ms,omitempty"`
+		Instrumental bool   `yaml:"instrumental,omitempty"`
 	} `yaml:"metadata"`
-	Lines []lyricsfileLine `yaml:"lines"`
-	Plain string           `yaml:"plain"`
+	Lines []lyricsfileLine `yaml:"lines,omitempty"`
+	Plain string           `yaml:"plain,omitempty"`
 }
 
 type lyricsfileLine struct {
 	lyricsfileSpan `yaml:",inline"`
-	Words          []lyricsfileSpan `yaml:"words"`
+	Words          []lyricsfileSpan `yaml:"words,omitempty"`
 }
 
 type lyricsfileSpan struct {
 	Text    string `yaml:"text"`
-	StartMS *int64 `yaml:"start_ms"`
-	EndMS   *int64 `yaml:"end_ms"`
+	StartMS *int64 `yaml:"start_ms,omitempty"`
+	EndMS   *int64 `yaml:"end_ms,omitempty"`
 }
 
 func (s lyricsfileSpan) timing() (start, end Seconds, ok bool) {
@@ -69,12 +75,28 @@ func ParseLyricsfile(data []byte) (*Lyrics, error) {
 		return nil, errLyricsfile
 	}
 	if document.Metadata.Instrumental {
-		return &Lyrics{Instrumental: true}, nil
+		return &Lyrics{
+			Instrumental: true,
+			Title:        document.Metadata.Title,
+			Artist:       document.Metadata.Artist,
+			Album:        document.Metadata.Album,
+			DurationMS:   document.Metadata.DurationMS,
+			Source:       SourceLyricsfile,
+			raw:          data,
+		}, nil
 	}
 	if len(document.Lines) > MaxLines || strings.Count(document.Plain, "\n")+1 > MaxLines {
 		return nil, ErrTooLarge
 	}
-	result := &Lyrics{Plain: document.Plain}
+	result := &Lyrics{
+		Plain:      document.Plain,
+		Title:      document.Metadata.Title,
+		Artist:     document.Metadata.Artist,
+		Album:      document.Metadata.Album,
+		DurationMS: document.Metadata.DurationMS,
+		Source:     SourceLyricsfile,
+		raw:        data,
+	}
 	wordCount := 0
 	for _, source := range document.Lines {
 		start, end, ok := source.timing()
@@ -120,6 +142,119 @@ func lyricsfileWords(source []lyricsfileSpan) []Word {
 		words = append(words, Word{Start: start, End: end, Text: span.Text})
 	}
 	return words
+}
+
+// AsLyricsfile encodes l as Lyricsfile version 1.0. A Lyricsfile source is
+// returned verbatim; every other source needs Title and Artist, which the
+// format requires. Voices, background and group have no Lyricsfile
+// representation and are dropped.
+func (l *Lyrics) AsLyricsfile() ([]byte, error) {
+	if l == nil {
+		return nil, errLyricsfile
+	}
+	if l.Source == SourceLyricsfile && l.raw != nil {
+		return l.raw, nil
+	}
+	if l.Title == "" || l.Artist == "" || l.DurationMS < 0 {
+		return nil, errLyricsfile
+	}
+	document := lyricsfileDocument{Version: "1.0"}
+	document.Metadata.Title = l.Title
+	document.Metadata.Artist = l.Artist
+	document.Metadata.Album = l.Album
+	document.Metadata.DurationMS = l.DurationMS
+	document.Metadata.Instrumental = l.Instrumental
+	if l.Instrumental {
+		return yaml.Marshal(document)
+	}
+	if len(l.Synced) > MaxLines {
+		return nil, ErrTooLarge
+	}
+	wordCount := 0
+	for _, line := range l.Synced {
+		wordCount += len(line.Words)
+		if wordCount > MaxWords {
+			return nil, ErrTooLarge
+		}
+	}
+	lines := slices.Clone(l.Synced)
+	sortLines(lines)
+	document.Lines = make([]lyricsfileLine, 0, len(lines))
+	texts := make([]string, 0, len(lines))
+	for _, line := range lines {
+		start, err := stampMS(line.Start)
+		if err != nil {
+			return nil, err
+		}
+		text := line.Text
+		if text == "" {
+			text = joinWords(line.Words)
+		}
+		entry := lyricsfileLine{}
+		entry.Text = text
+		if line.End != 0 {
+			end, err := stampMS(line.End)
+			if err != nil || end < start {
+				return nil, errLyricsfile
+			}
+			entry.EndMS = &end
+		}
+		if spans, keep := lyricsfileSpans(line.Words, text); keep {
+			for _, span := range spans {
+				start = min(start, *span.StartMS)
+			}
+			entry.Words = spans
+		}
+		entry.StartMS = &start
+		texts = append(texts, text)
+		document.Lines = append(document.Lines, entry)
+	}
+	plain := l.Plain
+	if plain == "" {
+		plain = strings.Join(texts, "\n")
+	}
+	if strings.Count(plain, "\n")+1 > MaxLines {
+		return nil, ErrTooLarge
+	}
+	document.Plain = plain
+	return yaml.Marshal(document)
+}
+
+// stampMS is milliseconds in reverse: Seconds to whole milliseconds for YAML.
+func stampMS(seconds Seconds) (int64, error) {
+	if !seconds.finite() || seconds < 0 || seconds > Seconds(math.MaxInt64/1000) {
+		return 0, errLyricsfile
+	}
+	return int64(math.Round(float64(seconds) * 1000)), nil
+}
+
+// lyricsfileSpans converts words when they are complete, timed, and spell out
+// line text: the same condition ParseLyricsfile uses to keep them.
+func lyricsfileSpans(words []Word, lineText string) ([]lyricsfileSpan, bool) {
+	if len(words) == 0 {
+		return nil, false
+	}
+	joined := joinWords(words)
+	if joined != lineText || strings.TrimSpace(joined) == "" {
+		return nil, false
+	}
+	spans := make([]lyricsfileSpan, 0, len(words))
+	for _, word := range words {
+		start, err := stampMS(word.Start)
+		if err != nil {
+			return nil, false
+		}
+		span := lyricsfileSpan{Text: word.Text, StartMS: &start}
+		if word.End != 0 {
+			end, err := stampMS(word.End)
+			if err != nil || end < start {
+				return nil, false
+			}
+			span.EndMS = &end
+		}
+		spans = append(spans, span)
+	}
+	return spans, true
 }
 
 func validateLyricsfileNode(node *yaml.Node, depth int) error {

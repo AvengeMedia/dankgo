@@ -100,12 +100,31 @@ type Line struct {
 	Group int `json:"group,omitempty"`
 }
 
+// SourceFormat identifies the parser that produced a Lyrics value.
+type SourceFormat uint8
+
+const (
+	SourceUnknown SourceFormat = iota
+	SourceLRC
+	SourceTTML
+	SourceLyricsfile
+)
+
 type Lyrics struct {
 	// Synced is sorted by Start, empty if the source has no timing.
 	Synced       []Line            `json:"synced"`
 	Plain        string            `json:"plain"`
 	Instrumental bool              `json:"instrumental"`
 	Voices       map[VoiceID]Voice `json:"voices,omitempty"`
+	// Title, Artist, Album and DurationMS identify the track the lyrics belong to.
+	// Parsers fill what their source carries; callers fill the rest.
+	Title      string       `json:"title,omitempty"`
+	Artist     string       `json:"artist,omitempty"`
+	Album      string       `json:"album,omitempty"`
+	DurationMS int64        `json:"duration_ms,omitempty"`
+	Source     SourceFormat `json:"-"`
+	// raw is the verbatim input ParseLyricsfile received.
+	raw []byte
 }
 
 func sortLines(lines []Line) {

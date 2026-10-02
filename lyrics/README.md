@@ -121,6 +121,8 @@ lyrics.ParseLyricsfile(data) // Lyricsfile 1.0 YAML
 
 All three are a `lyrics.Parser`, which is just `func([]byte) (*Lyrics, error)`. They expect hostile input and cap it at 512 KiB, 2000 lines, 16000 words, returning `ErrTooLarge` beyond that. An empty document is not an error, check `.Empty()`.
 
+To write lyrics out again, `result.AsLyricsfile()` encodes any `*Lyrics` (from any parser or provider) back into Lyricsfile 1.0 YAML, and hands back the original bytes untouched when the source was already Lyricsfile. The format requires `title`/`artist`, so other sources need `Lyrics.Title`/`Lyrics.Artist` set: parsers fill what their source carries, callers fill the rest. `Voices`, `Background` and `Group` are dropped, the format has no fields for them.
+
 ## Adding things
 
 A new file format: write a `Parser`, add a row to `sidecarFormats` in `sidecar.go`.
