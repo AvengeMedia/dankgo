@@ -1,11 +1,12 @@
 package files
 
 import (
-	"cmp"
+	"bytes"
 	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"image"
 	"image/draw"
 	"io"
@@ -32,6 +33,7 @@ const (
 	imageSizeCap  = 64 << 20
 	pixelCap      = 100 << 20
 	externalLimit = 20 * time.Second
+	stderrTail    = 512
 	failDir       = "fail/dankfiles"
 )
 
@@ -40,6 +42,17 @@ var thumbSizes = map[string]int{
 	"large":    256,
 	"x-large":  512,
 	"xx-large": 1024,
+}
+
+// must match the blank decoder imports above
+var nativeImages = map[string]bool{
+	"image/png":      true,
+	"image/jpeg":     true,
+	"image/gif":      true,
+	"image/bmp":      true,
+	"image/x-ms-bmp": true,
+	"image/tiff":     true,
+	"image/webp":     true,
 }
 
 func ParseThumbSize(raw string) string {
@@ -51,24 +64,30 @@ func ParseThumbSize(raw string) string {
 }
 
 type Thumbs struct {
-	root  string
-	video string
-	pdf   string
+	root      string
+	cacheHome string
+	tools     *thumbnailers
+	bwrap     string
+	limit     time.Duration
 }
 
 func NewThumbs(cacheHome string) *Thumbs {
-	video, _ := exec.LookPath("ffmpegthumbnailer")
-	pdf, _ := exec.LookPath("pdftoppm")
-	return &Thumbs{root: filepath.Join(cacheHome, "thumbnails"), video: video, pdf: pdf}
+	return &Thumbs{
+		root:      filepath.Join(cacheHome, "thumbnails"),
+		cacheHome: cacheHome,
+		tools:     loadThumbnailers(),
+		bwrap:     detectBwrap(),
+		limit:     externalLimit,
+	}
 }
 
 func (t *Thumbs) Capabilities() []string {
 	caps := []string{"thumbnail.image"}
-	if t.video != "" {
-		caps = append(caps, "thumbnail.video")
+	for _, kind := range t.tools.mediaKinds() {
+		caps = append(caps, "thumbnail."+kind)
 	}
-	if t.pdf != "" {
-		caps = append(caps, "thumbnail.pdf")
+	if t.bwrap != "" {
+		caps = append(caps, "thumbnail.sandboxed")
 	}
 	return caps
 }
@@ -77,14 +96,11 @@ func (t *Thumbs) Supports(mimeType string) bool {
 	switch {
 	case mimeType == "image/svg+xml" || mimeType == "image/svg":
 		return false
-	case mediaType(mimeType) == "image":
+	case nativeImages[mimeType]:
 		return true
-	case mediaType(mimeType) == "video":
-		return t.video != ""
-	case mimeType == "application/pdf":
-		return t.pdf != ""
 	default:
-		return false
+		_, ok := t.tools.lookup(mimeType)
+		return ok
 	}
 }
 
@@ -122,40 +138,57 @@ func (t *Thumbs) Generate(e Entry, size string) (string, error) {
 }
 
 func (t *Thumbs) render(e Entry, bound int) (image.Image, error) {
-	switch {
-	case mediaType(e.Mime) == "image":
+	if nativeImages[e.Mime] {
 		if e.Size > imageSizeCap {
 			return nil, errors.New("image over the thumbnail size cap")
 		}
 		return decodeScaled(e.Path, bound)
-	case mediaType(e.Mime) == "video":
-		return t.external(bound, "", func(dst string) []string {
-			return []string{t.video, "-i", e.Path, "-o", dst, "-s", strconv.Itoa(bound)}
-		})
-	case e.Mime == "application/pdf":
-		return t.external(bound, "-1.png", func(dst string) []string {
-			return []string{t.pdf, "-png", "-f", "1", "-l", "1", "-scale-to", strconv.Itoa(bound), e.Path, strings.TrimSuffix(dst, ".png")}
-		})
 	}
-	return nil, errors.New("no thumbnailer for " + e.Mime)
+	tool, ok := t.tools.lookup(e.Mime)
+	if !ok {
+		return nil, errors.New("no thumbnailer for " + e.Mime)
+	}
+	return t.external(e, tool, bound)
 }
 
-func (t *Thumbs) external(bound int, producedSuffix string, build func(dst string) []string) (image.Image, error) {
+func (t *Thumbs) external(e Entry, tool thumbnailer, bound int) (image.Image, error) {
 	tmp, err := os.MkdirTemp("", "dfiles-thumb-")
 	if err != nil {
 		return nil, err
 	}
 	defer os.RemoveAll(tmp)
 
-	ctx, cancel := context.WithTimeout(context.Background(), externalLimit)
+	hostOutput := filepath.Join(tmp, filepath.Base(sandboxOutput))
+	argv := t.argv(e, tool, tmp, hostOutput, bound)
+
+	ctx, cancel := context.WithTimeout(context.Background(), t.limit)
 	defer cancel()
 
-	dst := filepath.Join(tmp, "out.png")
-	argv := build(dst)
-	if err := exec.CommandContext(ctx, argv[0], argv[1:]...).Run(); err != nil {
-		return nil, err
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd.Stderr = &stderr
+	cmd.WaitDelay = time.Second
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("%s: %w: %s", filepath.Base(tool.argv[0]), err, tail(stderr.Bytes()))
 	}
-	return decodeScaled(strings.TrimSuffix(dst, ".png")+cmp.Or(producedSuffix, ".png"), bound)
+	return decodeScaled(hostOutput, bound)
+}
+
+func (t *Thumbs) argv(e Entry, tool thumbnailer, outDir, hostOutput string, bound int) []string {
+	job := thumbJob{input: e.Path, output: hostOutput, size: bound, mime: e.Mime}
+	if t.bwrap == "" {
+		return tool.command(job)
+	}
+	job.input = sandboxInputPath(e.Path)
+	job.output = sandboxOutput
+	return append(bwrapArgs(t.bwrap, e.Path, outDir, t.cacheHome, filepath.Dir(tool.argv[0])), tool.command(job)...)
+}
+
+func tail(out []byte) string {
+	if len(out) > stderrTail {
+		out = out[len(out)-stderrTail:]
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func decodeScaled(path string, bound int) (image.Image, error) {

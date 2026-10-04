@@ -136,8 +136,10 @@ func TestThumbnailSupportFollowsHostTools(t *testing.T) {
 	assert.True(t, svc.thumbs.Supports("image/jpeg"))
 	assert.False(t, svc.thumbs.Supports("text/plain"))
 	assert.False(t, svc.thumbs.Supports("image/svg+xml"), "Qt renders svg on the UI side")
-	assert.Equal(t, svc.thumbs.video != "", svc.thumbs.Supports("video/mp4"))
-	assert.Equal(t, svc.thumbs.pdf != "", svc.thumbs.Supports("application/pdf"))
+	_, video := svc.thumbs.tools.lookup("video/mp4")
+	assert.Equal(t, video, svc.thumbs.Supports("video/mp4"))
+	_, pdf := svc.thumbs.tools.lookup("application/pdf")
+	assert.Equal(t, pdf, svc.thumbs.Supports("application/pdf"))
 	assert.Contains(t, svc.Capabilities(), "thumbnail.image")
 }
 
