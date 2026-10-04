@@ -5,9 +5,14 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/AvengeMedia/dankgo/log"
 )
+
+// uiWaitDelay bounds Wait after qs exits: processes qs forks (PAM
+// conversations) inherit its stderr pipe and can outlive it.
+const uiWaitDelay = 2 * time.Second
 
 func hasSystemdRun() bool {
 	_, err := exec.LookPath("systemd-run")
@@ -41,6 +46,7 @@ func appendQtEnv(env []string) []string {
 
 func (a *App) buildUICommand(ctx context.Context, socketPath string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, "qs", "-p", a.configPath)
+	cmd.WaitDelay = uiWaitDelay
 	env := append(os.Environ(),
 		a.cfg.EnvPrefix+"_SOCKET="+socketPath,
 		"QS_APP_ID="+a.cfg.QSAppID,
