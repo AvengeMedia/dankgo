@@ -94,7 +94,7 @@ func ParseTTML(data []byte) (*Lyrics, error) {
 	}
 
 	sortLines(parser.synced)
-	result := &Lyrics{Synced: parser.synced, Plain: strings.Join(parser.plain, "\n")}
+	result := &Lyrics{Synced: parser.synced, Plain: strings.Join(parser.plain, "\n"), Source: SourceTTML}
 	if len(parser.voices) > 0 {
 		result.Voices = parser.voices
 	}

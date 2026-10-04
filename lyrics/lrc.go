@@ -102,7 +102,7 @@ func ParseLRC(data []byte) (*Lyrics, error) {
 	}
 	sortLines(lines)
 
-	return &Lyrics{Synced: lines, Plain: strings.Join(plain, "\n")}, nil
+	return &Lyrics{Synced: lines, Plain: strings.Join(plain, "\n"), Source: SourceLRC}, nil
 }
 
 func shift(value, offset Seconds) Seconds {
