@@ -69,6 +69,8 @@ Word sync outranks priority. A word-synced result wins as soon as every word-cap
 
 A synced result whose every stamp is zero counts as a miss. LyricsPlus returns those for some Apple tracks, and the next provider usually has real timing.
 
+LRCLIB is asked for the track's exact signature first. When that record is plain or missing, the title is searched and the best record for the same track and artist within 8 seconds of the duration wins: word sync over line sync over plain, then the closest duration.
+
 | Provider       | Format                    | Sync                                  |
 | -------------- | ------------------------- | ------------------------------------- |
 | `BetterLyrics` | TTML                      | word, voices, backing vocals          |

@@ -196,8 +196,16 @@ var bracketed = regexp.MustCompile(`[(\[（【][^)\]）】]*[)\]）】]`)
 
 // matchesDuration allows for catalogs that time the same recording a few seconds apart.
 func (r Request) matchesDuration(seconds int) bool {
+	return r.durationGap(seconds) <= durationSlack
+}
+
+// durationGap is 0 when the request has no duration.
+func (r Request) durationGap(seconds int) int {
 	want := r.seconds()
-	return want == 0 || max(want-seconds, seconds-want) <= durationSlack
+	if want == 0 {
+		return 0
+	}
+	return max(want-seconds, seconds-want)
 }
 
 // Provider searches pad their results with other songs by the artist and other people's uploads.

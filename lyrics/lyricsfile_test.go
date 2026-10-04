@@ -35,7 +35,7 @@ plain: |
 
 func TestLyricsfileLookupPreservesWordsThroughCache(t *testing.T) {
 	client := isolate(t)
-	payload := lrclibResponse{Lyricsfile: wordLyricsfile, SyncedLyrics: "[00:01.20]Legacy line"}
+	payload := lrclibRecord{Lyricsfile: wordLyricsfile, SyncedLyrics: "[00:01.20]Legacy line"}
 	stub(client, func(context.Context, Provider, Request) (*Lyrics, error) {
 		return decodeLrclib(payload)
 	})
@@ -68,7 +68,7 @@ func TestLyricsfileFallbackToLRC(t *testing.T) {
 		strings.Replace(wordLyricsfile, "start_ms: 1200", "missing_start: 1200", 1),
 		strings.Replace(wordLyricsfile, "end_ms: 2800", "end_ms: 100", 1),
 	} {
-		payload := lrclibResponse{Lyricsfile: document, SyncedLyrics: "[00:02]Still readable"}
+		payload := lrclibRecord{Lyricsfile: document, SyncedLyrics: "[00:02]Still readable"}
 		result, err := decodeLrclib(payload)
 		if err != nil {
 			t.Fatal(err)
@@ -82,7 +82,7 @@ func TestLyricsfilePlainAndInstrumental(t *testing.T) {
 		"version: '1.0'\nmetadata: {}\nplain: |\n  First\n\n  Last\n",
 		"version: '1.0'\nmetadata: {instrumental: true}\n",
 	} {
-		payload := lrclibResponse{Lyricsfile: document}
+		payload := lrclibRecord{Lyricsfile: document}
 		result, err := decodeLrclib(payload)
 		if err != nil || result.Empty() || len(result.Synced) != 0 {
 			t.Fatalf("Lyricsfile-only response: %+v, %v", result, err)

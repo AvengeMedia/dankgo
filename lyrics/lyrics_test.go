@@ -239,7 +239,7 @@ func TestLookupCoalescesBeforeRateLimit(t *testing.T) {
 }
 
 func TestLrclibPlainLyricsLineLimit(t *testing.T) {
-	if _, err := decodeLrclib(lrclibResponse{PlainLyrics: strings.Repeat("line\n", MaxLines+1)}); !errors.Is(err, ErrTooLarge) {
+	if _, err := decodeLrclib(lrclibRecord{PlainLyrics: strings.Repeat("line\n", MaxLines+1)}); !errors.Is(err, ErrTooLarge) {
 		t.Fatalf("plain response limit error = %v", err)
 	}
 }
