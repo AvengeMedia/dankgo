@@ -76,7 +76,7 @@ func TestFolderIconsFollowUserDirs(t *testing.T) {
 	assert.Equal(t, "folder", byName(t, entries, "Elsewhere").IconName)
 }
 
-func TestWatchEnrichesMimeAfterSnapshot(t *testing.T) {
+func TestWatchSnapshotCarriesSniffedMime(t *testing.T) {
 	bus := &fakeBus{}
 	svc := NewService(bus, t.TempDir(), nil)
 	t.Cleanup(svc.Close)
@@ -90,10 +90,11 @@ func TestWatchEnrichesMimeAfterSnapshot(t *testing.T) {
 	require.NoError(t, err)
 	svc.Attach([]string{w.topic})
 
-	snapshot, _ := w.page(ListOptions{Sort: nameSort()})
-	assert.Empty(t, snapshot.Entries[0].Mime, "the snapshot goes out before sniffing")
+	snapshot, seq := w.page(ListOptions{Sort: nameSort()})
+	assert.Equal(t, "image/png", snapshot.Entries[0].Mime, "a small directory is sniffed before the snapshot goes out")
 
 	event := bus.await(t, func(b batch) bool { return len(b.Changed) > 0 && b.Changed[0].Name == "nameless" })
+	assert.LessOrEqual(t, event.Seq, seq, "the snapshot already carries this change")
 	assert.Equal(t, "image/png", event.Changed[0].Mime)
 	assert.Equal(t, "image-png", event.Changed[0].IconName)
 	assert.True(t, event.Changed[0].Thumbnailable)

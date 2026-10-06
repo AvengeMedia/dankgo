@@ -9,16 +9,18 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
 )
 
 const (
-	pendingCap     = 64
-	coalesceWindow = 100 * time.Millisecond
-	enrichChunk    = 64
-	thumbChunk     = 4
+	pendingCap      = 64
+	coalesceWindow  = 100 * time.Millisecond
+	enrichChunk     = 64
+	thumbChunk      = 4
+	firstPageBudget = 40 * time.Millisecond
 )
 
 type notifier interface {
@@ -107,8 +109,19 @@ func (s *Service) openWatch(ctx context.Context, path string, opts ListOptions) 
 		go w.run()
 	}
 	w.closeWith(ctx)
-	w.enrich(pending)
+	w.awaitEnrich(pending)
 	return w, nil
+}
+
+// A small directory's sniffed mimes land in the first page instead of a second paint.
+func (w *watch) awaitEnrich(pending []Entry) {
+	done := w.enrich(pending)
+	budget := time.NewTimer(firstPageBudget)
+	defer budget.Stop()
+	select {
+	case <-done:
+	case <-budget.C:
+	}
 }
 
 func (s *Service) armNotifier(path string) notifier {
@@ -324,10 +337,24 @@ func unenriched(entries []Entry) []Entry {
 	return pending
 }
 
-func (w *watch) enrich(pending []Entry) {
-	for chunk := range slices.Chunk(pending, enrichChunk) {
-		w.svc.pool.submit(func() { w.enrichChunk(chunk) })
+func (w *watch) enrich(pending []Entry) <-chan struct{} {
+	done := make(chan struct{})
+	chunks := slices.Collect(slices.Chunk(pending, enrichChunk))
+	if len(chunks) == 0 {
+		close(done)
+		return done
 	}
+	var remaining atomic.Int32
+	remaining.Store(int32(len(chunks)))
+	for _, chunk := range chunks {
+		w.svc.pool.submit(func() {
+			w.enrichChunk(chunk)
+			if remaining.Add(-1) == 0 {
+				close(done)
+			}
+		})
+	}
+	return done
 }
 
 func (w *watch) enrichChunk(chunk []Entry) {

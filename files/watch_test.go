@@ -422,3 +422,19 @@ func settle(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+func TestWatchFirstPageCarriesSniffedMimes(t *testing.T) {
+	svc := newTestService(t)
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "script"), []byte("#!/bin/sh\necho hi\n"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "notes"), []byte("plain words\n"), 0o644))
+
+	w, err := svc.Watch(context.Background(), root, nameSort(), false)
+	require.NoError(t, err)
+
+	page, _ := w.page(ListOptions{Sort: nameSort()})
+	require.Len(t, page.Entries, 2)
+	assert.Equal(t, "text/plain", page.Entries[0].Mime)
+	assert.Equal(t, "application/x-shellscript", page.Entries[1].Mime)
+	assert.Equal(t, "application-x-shellscript", page.Entries[1].IconName)
+}
