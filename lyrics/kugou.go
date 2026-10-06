@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const (
@@ -23,9 +24,10 @@ const (
 var (
 	errKRC = errors.New("invalid krc document")
 
-	krcKey  = []byte{64, 71, 97, 119, 94, 50, 116, 71, 81, 54, 49, 45, 206, 210, 110, 105}
-	krcLine = regexp.MustCompile(`^\[(\d+),(\d+)\](.*)`)
-	krcWord = regexp.MustCompile(`<(\d+),(\d+),\d+>([^<]*)`)
+	krcKey        = []byte{64, 71, 97, 119, 94, 50, 116, 71, 81, 54, 49, 45, 206, 210, 110, 105}
+	krcLine       = regexp.MustCompile(`^\[(\d+),(\d+)\](.*)`)
+	krcWord       = regexp.MustCompile(`<(\d+),(\d+),\d+>([^<]*)`)
+	kugouTitleSep = regexp.MustCompile(`\s-+\s`)
 )
 
 type kugouSong struct {
@@ -48,10 +50,10 @@ func (c *Client) fetchKuGou(ctx context.Context, req Request) (*Lyrics, error) {
 	if err != nil {
 		return nil, err
 	}
-	if found, err := c.kugouDownload(ctx, candidate, "krc", decodeKRC); err == nil && !found.Empty() {
+	if found, err := c.kugouDownload(ctx, req, candidate, "krc", decodeKRC); err == nil && !found.Empty() {
 		return found, nil
 	}
-	return c.kugouDownload(ctx, candidate, "lrc", ParseLRC)
+	return c.kugouDownload(ctx, req, candidate, "lrc", ParseLRC)
 }
 
 func (c *Client) kugouCandidate(ctx context.Context, req Request) (kugouCandidate, error) {
@@ -104,7 +106,7 @@ func kugouMatches(req Request, title, singers string) bool {
 	return req.matchesTrack(title, strings.Split(singers, "、"))
 }
 
-func (c *Client) kugouDownload(ctx context.Context, candidate kugouCandidate, format string, parse Parser) (*Lyrics, error) {
+func (c *Client) kugouDownload(ctx context.Context, req Request, candidate kugouCandidate, format string, parse Parser) (*Lyrics, error) {
 	query := url.Values{"ver": {"1"}, "client": {"pc"}, "charset": {"utf8"}, "fmt": {format}, "id": {candidate.ID}, "accesskey": {candidate.AccessKey}}
 	var payload struct {
 		Content string `json:"content"`
@@ -120,7 +122,7 @@ func (c *Client) kugouDownload(ctx context.Context, candidate kugouCandidate, fo
 	if err != nil {
 		return nil, err
 	}
-	return tidyKuGou(parsed), nil
+	return tidyKuGou(req, parsed), nil
 }
 
 // decodeKRC reads KuGou's karaoke lyrics: "krc1", then zlib data XORed with a fixed key.
@@ -202,7 +204,7 @@ func krcSpan(offset, length string) (Seconds, Seconds, bool) {
 
 // tidyKuGou drops the "title - artist" line and "role：name" credits KuGou puts before the lyrics.
 // Either may be missing.
-func tidyKuGou(parsed *Lyrics) *Lyrics {
+func tidyKuGou(req Request, parsed *Lyrics) *Lyrics {
 	lines := parsed.Synced
 	if len(lines) == 0 {
 		return parsed
@@ -214,7 +216,7 @@ func tidyKuGou(parsed *Lyrics) *Lyrics {
 	for credits < len(lines) && kugouHeaderLine(lines[credits].Text, credits == 0) {
 		credits++
 	}
-	lyrics := lines[credits:]
+	lyrics := dropBakedTranslations(req, lines[credits:])
 	plain := make([]string, len(lyrics))
 	for i, line := range lyrics {
 		plain[i] = line.Text
@@ -226,5 +228,55 @@ func kugouHeaderLine(text string, first bool) bool {
 	if strings.ContainsAny(text, ":：") {
 		return true
 	}
-	return first && strings.Contains(text, " - ")
+	return first && kugouTitleSep.MatchString(text)
+}
+
+// Some uploads carry a Chinese translation as a timed line after every original line instead
+// of in the [language:] channel. Only that strict alternation of Han-only lines is dropped:
+// mixed-language lyrics have CJK lines in a row, a CJK song requested by a romanized name
+// starts with one, and Japanese or Korean lines carry kana or Hangul so a romaji upload is safe.
+func dropBakedTranslations(req Request, lines []Line) []Line {
+	if hasCJK(req.Title + req.Artist) {
+		return lines
+	}
+	originals, translations := 0, 0
+	for i, line := range lines {
+		switch {
+		case !hanOnly(line.Text):
+			originals++
+		case i > 0 && !hanOnly(lines[i-1].Text):
+			translations++
+		default:
+			return lines
+		}
+	}
+	if translations == 0 || translations*5 < originals*4 {
+		return lines
+	}
+	kept := make([]Line, 0, originals)
+	for _, line := range lines {
+		if !hanOnly(line.Text) {
+			kept = append(kept, line)
+		}
+	}
+	return kept
+}
+
+func hasCJK(text string) bool {
+	return strings.ContainsFunc(text, func(r rune) bool {
+		return unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul)
+	})
+}
+
+func hanOnly(text string) bool {
+	han := false
+	for _, r := range text {
+		switch {
+		case unicode.Is(unicode.Han, r):
+			han = true
+		case unicode.IsLetter(r):
+			return false
+		}
+	}
+	return han
 }
