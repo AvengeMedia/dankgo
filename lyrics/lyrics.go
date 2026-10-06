@@ -17,7 +17,7 @@ import (
 const (
 	rateBurst  = 10
 	rateRefill = 0.5
-	wordGrace  = 2 * time.Second
+	syncGrace  = 2 * time.Second
 )
 
 var ErrRateLimited = errors.New("rate limited")
@@ -42,7 +42,7 @@ type Client struct {
 	cacheDir  string
 	userAgent string
 	upgrade   bool
-	wordGrace time.Duration
+	syncGrace time.Duration
 	http      *http.Client
 	sources   map[Provider]Source
 	resolve   func(Provider) (Source, bool)
@@ -57,7 +57,7 @@ func New(opts Options) *Client {
 		cacheDir:    opts.CacheDir,
 		userAgent:   opts.UserAgent,
 		upgrade:     !opts.DisableUpgrade,
-		wordGrace:   wordGrace,
+		syncGrace:   syncGrace,
 		http:        newHTTPClient(),
 		resolve:     opts.Resolve,
 		rateBuckets: map[Provider]*rateBucket{},
@@ -137,9 +137,9 @@ type providerResponse struct {
 // caller-specified priority order. Fast lower-priority results are buffered
 // until every provider ahead of them has failed or missed (with timeout considered)
 //
-// Word sync outranks priority: a word-synced result wins once every wordProvider ahead
-// of it has finished, and a lesser winner is held up to wordGrace for the wordProviders
-// still out.
+// Sync outranks priority: word over line over plain. A result wins once nothing still
+// out can beat it. Once priority alone has a winner, the wait for better sync is
+// bounded by syncGrace.
 func (c *Client) lookupProviders(ctx context.Context, providers []namedSource, req Request) (*Result, error) {
 	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
@@ -152,100 +152,96 @@ func (c *Client) lookupProviders(ctx context.Context, providers []namedSource, r
 		}()
 	}
 
-	// Buffer out-of-order responses until all providers ahead (higher prio) have finished
 	finished := make([]bool, len(providers))
 	results := make([]providerResponse, len(providers))
-
-	// next is the highest-prio provider whose result hasnt been received yet
-	next := 0
-	answered := false
-	var lookupErr error
+	remaining := len(providers)
 	var grace <-chan time.Time
-	for next < len(providers) {
+	for remaining > 0 {
 		select {
 		case <-ctx.Done():
 			// We can get lower-priority results faster than the higher-priority provider results
 			// we wait for the higher priority until the timeout, then return the best one we already got
-			if best := bestFound(results); best != nil {
+			if best, _ := bestFound(results); best != nil {
 				return best, nil
 			}
 			return nil, ctx.Err()
 		case <-grace:
-			return bestFound(results), nil
+			best, _ := bestFound(results)
+			return best, nil
 		case response := <-replies:
 			finished[response.index] = true
 			results[response.index] = response
+			remaining--
 		}
-		if word := wordWinner(providers, finished, results); word != nil {
-			return word, nil
+		best, index := bestFound(results)
+		if best == nil {
+			continue
 		}
-		for next < len(providers) && finished[next] {
-			response := results[next]
-
-			// First success in priority order wins, unless word sync may still arrive
-			if response.err == nil && response.result != nil && response.result.Found {
-				if !wordPending(providers, finished) {
-					return response.result, nil
-				}
-				if grace == nil {
-					grace = time.After(c.wordGrace)
-				}
-				break
-			}
-
-			if response.err != nil {
-				lookupErr = response.err
-			} else {
-				answered = true
-			}
-
-			next++
+		if !blockedAhead(providers, finished, index, best.tier()) && !upgradePending(providers, finished, index, best.tier()) {
+			return best, nil
+		}
+		if grace == nil && leaderFound(finished, results) {
+			grace = time.After(c.syncGrace)
 		}
 	}
 	// A provider that says "no lyrics" outranks one that merely failed to answer.
-	if lookupErr != nil && !answered {
-		return nil, lookupErr
+	var lookupErr error
+	for _, response := range results {
+		if response.err == nil {
+			return &Result{}, nil
+		}
+		lookupErr = response.err
 	}
-	return &Result{}, nil
+	return nil, lookupErr
 }
 
-// wordWinner is the first word-synced result with no wordProvider still out ahead of it.
-func wordWinner(providers []namedSource, finished []bool, results []providerResponse) *Result {
-	for index, provider := range providers {
-		if !finished[index] && provider.WordSync {
-			return nil
-		}
-		if result := results[index].result; result != nil && result.Found && result.wordSynced() {
-			return result
-		}
-	}
-	return nil
-}
-
-func wordPending(providers []namedSource, finished []bool) bool {
-	for index, provider := range providers {
-		if !finished[index] && provider.WordSync {
+// blockedAhead is a higher-priority provider still out that could answer at the same tier.
+func blockedAhead(providers []namedSource, finished []bool, index, tier int) bool {
+	for i := range index {
+		if !finished[i] && (tier < 2 || providers[i].WordSync) {
 			return true
 		}
 	}
 	return false
 }
 
-// bestFound prefers word sync, priority order breaks ties.
-func bestFound(responses []providerResponse) *Result {
-	var best *Result
-	for _, response := range responses {
-		if response.result == nil || !response.result.Found {
-			continue
-		}
-		if response.result.wordSynced() {
-			return response.result
-		}
-		if best == nil {
-			best = response.result
+// upgradePending is a lower-priority provider still out that could answer at a higher tier.
+func upgradePending(providers []namedSource, finished []bool, index, tier int) bool {
+	for i := index + 1; i < len(providers); i++ {
+		if !finished[i] && (tier == 0 || (tier == 1 && providers[i].WordSync)) {
+			return true
 		}
 	}
-	return best
+	return false
+}
+
+// leaderFound is whether priority alone already has a winner.
+func leaderFound(finished []bool, results []providerResponse) bool {
+	for i, response := range results {
+		if !finished[i] {
+			return false
+		}
+		if response.result != nil && response.result.Found {
+			return true
+		}
+	}
+	return false
+}
+
+// bestFound is the highest sync tier found so far, priority order breaks ties.
+func bestFound(responses []providerResponse) (*Result, int) {
+	var best *Result
+	index := -1
+	for i, response := range responses {
+		result := response.result
+		if result == nil || !result.Found {
+			continue
+		}
+		if best == nil || result.tier() > best.tier() {
+			best, index = result, i
+		}
+	}
+	return best, index
 }
 
 func (c *Client) lookupProvider(ctx context.Context, provider namedSource, req Request) (*Result, error) {

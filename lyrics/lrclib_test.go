@@ -88,6 +88,14 @@ func TestLrclibSearchesWhenTheExactSignatureIsPlain(t *testing.T) {
 	})
 }
 
+func TestLrclibBestIgnoresTopicChannelSuffix(t *testing.T) {
+	req := Request{Artist: "Alexandria", Title: "The Fool", Duration: 175 * time.Second}
+	records := []lrclibRecord{{TrackName: "The Fool", ArtistName: "Alexandria - Topic", Duration: 175, SyncedLyrics: "[00:00.81]line"}}
+	if best := lrclibBest(records, req); best == nil {
+		t.Fatal("topic channel upload was rejected")
+	}
+}
+
 func TestLrclibBestPrefersWordSyncThenDuration(t *testing.T) {
 	req := Request{Artist: "Artist", Title: "Track", Duration: 200 * time.Second}
 	records := []lrclibRecord{

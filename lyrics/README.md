@@ -63,13 +63,13 @@ That's the whole search, there is no library scan. A local file beats everything
 
 **2. Disk cache.** `Options.CacheDir`, or `dankgo/lyrics` under `os.UserCacheDir()`. One JSON file per track per provider. Misses are cached too, for 14 days. Not a BetterLyrics 401 though, that only means their server has not cached the track yet. A line-synced entry older than 14 days is re-requested from its provider once, and replaced only if word sync came back. `Options.DisableUpgrade` turns that off. `client.Prune()` removes entries older than 90 days, it no-ops if it already ran in the last 24h.
 
-**3. Providers.** All requested at the same time, 12 second timeout. Priority still holds: if LRCLIB answers first but BetterLyrics is ahead of it in the list, the LRCLIB result is held until BetterLyrics finishes or the tiemout hits.
+**3. Providers.** All requested at the same time, 12 second timeout. Priority still holds: if LRCLIB answers first but BetterLyrics is ahead of it in the list, the LRCLIB result is held until BetterLyrics finishes or the timeout hits.
 
-Word sync outranks priority. A word-synced result wins as soon as every word-capable provider ahead of it has finished. When the priority winner is only line-synced or plain and a word-capable provider is still out, it is held for up to 2 seconds in case word sync shows up. LRCLIB is never waited on for this, it has word sync too rarely.
+Sync outranks priority: word over line over plain. A result wins once nothing still out can beat it. When the priority winner is plain and any provider is still out, or line-synced and a word-capable provider is still out, it is held for up to 2 seconds in case better sync shows up. A word-synced result wins as soon as every word-capable provider ahead of it has finished. LRCLIB is never waited on for word sync, it has it too rarely.
 
 A synced result whose every stamp is zero counts as a miss. LyricsPlus returns those for some Apple tracks, and the next provider usually has real timing.
 
-LRCLIB is asked for the track's exact signature first. When that record is plain or missing, the title is searched and the best record for the same track and artist within 8 seconds of the duration wins: word sync over line sync over plain, then the closest duration.
+LRCLIB is asked for the track's exact signature first. When that record is plain or missing, the title is searched and the best record for the same track and artist within 8 seconds of the duration wins: word sync over line sync over plain, then the closest duration. A `- Topic` suffix on the artist, YouTube's auto-generated channel naming, is ignored when matching.
 
 | Provider       | Format                    | Sync                                  |
 | -------------- | ------------------------- | ------------------------------------- |

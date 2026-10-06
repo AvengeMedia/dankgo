@@ -88,8 +88,10 @@ func (r lrclibRecord) seconds() int {
 	return int(math.Round(r.Duration))
 }
 
+// YouTube's auto-generated channels are "<artist> - Topic", uploads scraped from them keep it.
 func (r lrclibRecord) artists() []string {
-	return strings.FieldsFunc(r.ArtistName, func(c rune) bool { return strings.ContainsRune(",;/&\x00", c) })
+	name := strings.TrimSuffix(r.ArtistName, " - Topic")
+	return strings.FieldsFunc(name, func(c rune) bool { return strings.ContainsRune(",;/&\x00", c) })
 }
 
 func decodeLrclib(record lrclibRecord) (*Lyrics, error) {

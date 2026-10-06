@@ -164,6 +164,17 @@ func (l *Lyrics) timed() bool {
 	})
 }
 
+// tier is 2 for word sync, 1 for line sync or instrumental, 0 for plain text.
+func (l *Lyrics) tier() int {
+	switch {
+	case l.wordSynced():
+		return 2
+	case len(l.Synced) > 0 || l.Instrumental:
+		return 1
+	}
+	return 0
+}
+
 func (l *Lyrics) wordSynced() bool {
 	return slices.ContainsFunc(l.Synced, func(line Line) bool { return len(line.Words) > 0 })
 }

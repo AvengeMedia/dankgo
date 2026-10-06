@@ -15,7 +15,7 @@ import (
 func isolate(t *testing.T) *Client {
 	t.Helper()
 	client := New(Options{CacheDir: t.TempDir()})
-	client.wordGrace = 10 * time.Millisecond
+	client.syncGrace = 10 * time.Millisecond
 	return client
 }
 
