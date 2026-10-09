@@ -175,7 +175,7 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 func (s *Server) dispatch(ctx context.Context, w *ConnWriter, req Request, sub *Subscriber) {
 	switch req.Method {
 	case "ping":
-		Respond(w, req.ID, map[string]any{"pong": true})
+		w.Respond(req.ID, map[string]any{"pong": true})
 	case "subscribe":
 		if s.cfg.SubscribeHandler != nil {
 			s.cfg.SubscribeHandler(ctx, w, req, sub)
@@ -190,7 +190,7 @@ func (s *Server) dispatch(ctx context.Context, w *ConnWriter, req Request, sub *
 		handleUnsubscribe(w, req, sub)
 	default:
 		if s.handler == nil {
-			RespondError(w, req.ID, "unknown method: "+req.Method)
+			w.RespondError(req.ID, "unknown method: "+req.Method)
 			return
 		}
 		s.handler(ctx, w, req, sub)
@@ -203,7 +203,7 @@ func (s *Server) handleSubscribe(w *ConnWriter, req Request, sub *Subscriber) {
 		topics = s.cfg.DefaultSubscribeTopics
 	}
 	sub.Subscribe(topics...)
-	Respond(w, req.ID, map[string]any{"topics": sub.Topics()})
+	w.Respond(req.ID, map[string]any{"topics": sub.Topics()})
 
 	if s.cfg.OnSubscribe == nil {
 		return
@@ -214,11 +214,11 @@ func (s *Server) handleSubscribe(w *ConnWriter, req Request, sub *Subscriber) {
 func handleUnsubscribe(w *ConnWriter, req Request, sub *Subscriber) {
 	topics := params.StringSlice(req.Params, "topics")
 	if len(topics) == 0 {
-		Respond(w, req.ID, map[string]any{"topics": sub.Topics()})
+		w.Respond(req.ID, map[string]any{"topics": sub.Topics()})
 		return
 	}
 	sub.Unsubscribe(topics...)
-	Respond(w, req.ID, map[string]any{"topics": sub.Topics()})
+	w.Respond(req.ID, map[string]any{"topics": sub.Topics()})
 }
 
 func cleanupStaleSockets(app paths.App) {

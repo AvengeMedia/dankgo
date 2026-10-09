@@ -222,9 +222,9 @@ func TestCallUI(t *testing.T) {
 		func(ctx context.Context, w *ipc.ConnWriter, req ipc.Request, sub *ipc.Subscriber) {
 			switch req.Method {
 			case "ui.show":
-				ipc.Respond(w, req.ID, map[string]any{"ok": true})
+				w.Respond(req.ID, map[string]any{"ok": true})
 			default:
-				ipc.RespondError(w, req.ID, "unknown method: "+req.Method)
+				w.RespondError(req.ID, "unknown method: "+req.Method)
 			}
 		})
 	require.NoError(t, srv.Listen())

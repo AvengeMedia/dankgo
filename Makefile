@@ -1,5 +1,5 @@
 GO=go
-MIN_GO_VERSION=1.26
+MIN_GO_VERSION=1.27
 
 BASE_VERSION=$(shell git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")
 COMMIT_COUNT=$(shell git rev-list --count HEAD 2>/dev/null || echo "0")
@@ -37,7 +37,7 @@ mocks:
 	mockery
 
 check-go:
-	@$(GO) version | grep -qE "go($(MIN_GO_VERSION)|1\.2[7-9]|[2-9]\.)" || { echo "Go $(MIN_GO_VERSION)+ required"; exit 1; }
+	@$(GO) version | grep -qE "go($(MIN_GO_VERSION)|1\.2[8-9]|[2-9]\.)" || { echo "Go $(MIN_GO_VERSION)+ required"; exit 1; }
 
 version:
 	@echo "$(VERSION)"

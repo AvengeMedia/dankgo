@@ -55,9 +55,9 @@ func TestClientCallCustomHandler(t *testing.T) {
 	handler := func(ctx context.Context, w *ipc.ConnWriter, req ipc.Request, sub *ipc.Subscriber) {
 		switch req.Method {
 		case "echo":
-			ipc.Respond(w, req.ID, req.Params)
+			w.Respond(req.ID, req.Params)
 		default:
-			ipc.RespondError(w, req.ID, "unknown method: "+req.Method)
+			w.RespondError(req.ID, "unknown method: "+req.Method)
 		}
 	}
 	srv := startServer(t, ipc.Config{AppName: "danktest", APIVersion: 1}, handler)
@@ -126,7 +126,7 @@ func TestSubscribeHandlerOverride(t *testing.T) {
 		AppName:    "danktest",
 		APIVersion: 1,
 		SubscribeHandler: func(ctx context.Context, w *ipc.ConnWriter, req ipc.Request, sub *ipc.Subscriber) {
-			ipc.Respond(w, req.ID, map[string]any{"method": req.Method, "custom": true})
+			w.Respond(req.ID, map[string]any{"method": req.Method, "custom": true})
 		},
 	}, nil)
 
@@ -157,10 +157,10 @@ func TestFindRunningSocket(t *testing.T) {
 func TestMux(t *testing.T) {
 	mux := ipc.NewMux()
 	mux.Handle("version", func(ctx context.Context, w *ipc.ConnWriter, req ipc.Request, sub *ipc.Subscriber) {
-		ipc.Respond(w, req.ID, map[string]any{"version": "1.0"})
+		w.Respond(req.ID, map[string]any{"version": "1.0"})
 	})
 	mux.HandlePrefix("things.", func(ctx context.Context, w *ipc.ConnWriter, req ipc.Request, sub *ipc.Subscriber) {
-		ipc.Respond(w, req.ID, map[string]any{"method": req.Method})
+		w.Respond(req.ID, map[string]any{"method": req.Method})
 	})
 	srv := startServer(t, ipc.Config{AppName: "danktest", APIVersion: 1}, mux.ServeIPC)
 

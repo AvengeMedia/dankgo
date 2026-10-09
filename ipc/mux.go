@@ -38,5 +38,5 @@ func (m *Mux) ServeIPC(ctx context.Context, w *ConnWriter, req Request, sub *Sub
 			return
 		}
 	}
-	RespondError(w, req.ID, "unknown method: "+req.Method)
+	w.RespondError(req.ID, "unknown method: "+req.Method)
 }

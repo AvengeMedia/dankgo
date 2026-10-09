@@ -55,7 +55,7 @@ func (s *Service) Handle(ctx context.Context, w *ipc.ConnWriter, req ipc.Request
 	case "files.sizeCancel":
 		s.handleSizeCancel(w, req)
 	case "files.userDirs":
-		ipc.Respond(w, req.ID, map[string]any{"dirs": listUserDirs()})
+		w.Respond(req.ID, map[string]any{"dirs": listUserDirs()})
 	case "files.mkdir":
 		s.handleMkdir(w, req)
 	case "files.rename":
@@ -81,7 +81,7 @@ func (s *Service) handleList(w *ipc.ConnWriter, req ipc.Request) {
 			return
 		}
 		page, seq := watcher.page(opts)
-		ipc.Respond(w, req.ID, listResult{Path: watcher.path, WatchID: id, Seq: seq, Entries: page.Entries, Total: page.Total, Cursor: page.Cursor})
+		w.Respond(req.ID, listResult{Path: watcher.path, WatchID: id, Seq: seq, Entries: page.Entries, Total: page.Total, Cursor: page.Cursor})
 		return
 	}
 
@@ -95,7 +95,7 @@ func (s *Service) handleList(w *ipc.ConnWriter, req ipc.Request) {
 		respondErr(w, req.ID, err)
 		return
 	}
-	ipc.Respond(w, req.ID, listResult{Path: path, Entries: page.Entries, Total: page.Total, Cursor: page.Cursor})
+	w.Respond(req.ID, listResult{Path: path, Entries: page.Entries, Total: page.Total, Cursor: page.Cursor})
 }
 
 func (s *Service) handleWatch(ctx context.Context, w *ipc.ConnWriter, req ipc.Request) {
@@ -117,7 +117,7 @@ func (s *Service) handleWatch(ctx context.Context, w *ipc.ConnWriter, req ipc.Re
 	}
 
 	page, seq := watcher.page(opts)
-	ipc.Respond(w, req.ID, watchResult{
+	w.Respond(req.ID, watchResult{
 		listResult:  listResult{Path: path, WatchID: watcher.id, Seq: seq, Entries: page.Entries, Total: page.Total, Cursor: page.Cursor},
 		Topic:       watcher.topic,
 		Watching:    watcher.watching,
@@ -133,7 +133,7 @@ func (s *Service) handleUnwatch(w *ipc.ConnWriter, req ipc.Request) {
 		return
 	}
 	watcher.close()
-	ipc.Respond(w, req.ID, map[string]any{"watchId": id, "closed": true})
+	w.Respond(req.ID, map[string]any{"watchId": id, "closed": true})
 }
 
 func (s *Service) handleStat(w *ipc.ConnWriter, req ipc.Request) {
@@ -147,7 +147,7 @@ func (s *Service) handleStat(w *ipc.ConnWriter, req ipc.Request) {
 		respondErr(w, req.ID, err)
 		return
 	}
-	ipc.Respond(w, req.ID, map[string]any{"entry": entry})
+	w.Respond(req.ID, map[string]any{"entry": entry})
 }
 
 func (s *Service) handleCount(w *ipc.ConnWriter, req ipc.Request) {
@@ -162,7 +162,7 @@ func (s *Service) handleCount(w *ipc.ConnWriter, req ipc.Request) {
 	for _, path := range paths {
 		counts[path] = s.count(path, includeHidden)
 	}
-	ipc.Respond(w, req.ID, map[string]any{"counts": counts})
+	w.Respond(req.ID, map[string]any{"counts": counts})
 }
 
 func (s *Service) handleSize(ctx context.Context, w *ipc.ConnWriter, req ipc.Request) {
@@ -172,7 +172,7 @@ func (s *Service) handleSize(ctx context.Context, w *ipc.ConnWriter, req ipc.Req
 		return
 	}
 	sc := s.startSize(ctx, paths)
-	ipc.Respond(w, req.ID, map[string]any{"scanId": sc.id, "topic": sizeTopic})
+	w.Respond(req.ID, map[string]any{"scanId": sc.id, "topic": sizeTopic})
 }
 
 func (s *Service) handleSizeCancel(w *ipc.ConnWriter, req ipc.Request) {
@@ -181,7 +181,7 @@ func (s *Service) handleSizeCancel(w *ipc.ConnWriter, req ipc.Request) {
 		respondCode(w, req.ID, CodeInvalid, "files.sizeCancel requires scanId")
 		return
 	}
-	ipc.Respond(w, req.ID, map[string]any{"cancelled": s.cancelScan(id)})
+	w.Respond(req.ID, map[string]any{"cancelled": s.cancelScan(id)})
 }
 
 func (s *Service) handleThumbnail(w *ipc.ConnWriter, req ipc.Request) {
@@ -202,7 +202,7 @@ func (s *Service) handleThumbnail(w *ipc.ConnWriter, req ipc.Request) {
 		watcher = found
 	}
 
-	ipc.Respond(w, req.ID, map[string]any{"size": size, "results": s.thumbnails(paths, size, watcher)})
+	w.Respond(req.ID, map[string]any{"size": size, "results": s.thumbnails(paths, size, watcher)})
 }
 
 func (s *Service) handleMkdir(w *ipc.ConnWriter, req ipc.Request) {
@@ -216,7 +216,7 @@ func (s *Service) handleMkdir(w *ipc.ConnWriter, req ipc.Request) {
 		respondErr(w, req.ID, err)
 		return
 	}
-	ipc.Respond(w, req.ID, map[string]any{"path": entry.Path, "entry": entry})
+	w.Respond(req.ID, map[string]any{"path": entry.Path, "entry": entry})
 }
 
 func (s *Service) handleRename(w *ipc.ConnWriter, req ipc.Request) {
@@ -230,7 +230,7 @@ func (s *Service) handleRename(w *ipc.ConnWriter, req ipc.Request) {
 		respondErr(w, req.ID, err)
 		return
 	}
-	ipc.Respond(w, req.ID, map[string]any{"path": renamed})
+	w.Respond(req.ID, map[string]any{"path": renamed})
 }
 
 func (s *Service) handleTrash(w *ipc.ConnWriter, req ipc.Request) {
@@ -243,7 +243,7 @@ func (s *Service) handleTrash(w *ipc.ConnWriter, req ipc.Request) {
 		respondCode(w, req.ID, CodeInvalid, "path must be absolute: "+paths[relative])
 		return
 	}
-	ipc.Respond(w, req.ID, s.trashPaths(paths))
+	w.Respond(req.ID, s.trashPaths(paths))
 }
 
 func (s *Service) handleIcon(w *ipc.ConnWriter, req ipc.Request) {
@@ -255,7 +255,7 @@ func (s *Service) handleIcon(w *ipc.ConnWriter, req ipc.Request) {
 		respondCode(w, req.ID, CodeInvalid, "files.icon requires paths or mimes")
 		return
 	}
-	ipc.Respond(w, req.ID, map[string]any{"icons": s.icons(keys)})
+	w.Respond(req.ID, map[string]any{"icons": s.icons(keys)})
 }
 
 func listOptions(req ipc.Request) (ListOptions, error) {
