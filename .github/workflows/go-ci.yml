@@ -37,9 +37,7 @@ jobs:
         run: go vet ./...
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v9
-        with:
-          version: v2.12
+        run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1 run
 
   test:
     name: Test
